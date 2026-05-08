@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  group-manager:
+    build: .
+    container_name: tg-group-manager
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DB_PATH=/app/data/bot.db
+    volumes:
+      - ./data:/app/data
