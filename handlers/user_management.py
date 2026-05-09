@@ -2,11 +2,11 @@
 import time
 from telegram import Update
 from telegram.ext import ContextTypes
-from utils.decorators import admin_required
+from utils.decorators import admin_required, require_perm
 from services import database as db
 
 
-@admin_required
+@require_perm("kick")
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """踢出用户：/kick @user [原因]"""
     if not context.args or len(context.args) < 1:
@@ -42,7 +42,7 @@ async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("ban")
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """封禁用户：/ban @user [原因]"""
     if not context.args:
@@ -76,7 +76,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("ban")
 async def temp_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """临时封禁：/tempban @user <分钟> [原因]"""
     if len(context.args) < 2:
@@ -116,7 +116,7 @@ async def temp_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-@admin_required
+@require_perm("ban")
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """解封用户：/unban @user"""
     if not context.args:
@@ -143,7 +143,7 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"✅ 已解封 {display}")
 
 
-@admin_required
+@require_perm("mute")
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """禁言用户：/mute @user [分钟]"""
     if not context.args:
@@ -187,7 +187,7 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"✅ 已禁言 {display}，{minutes}分钟后自动解除")
 
 
-@admin_required
+@require_perm("mute")
 async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """解除禁言：/unmute @user"""
     if not context.args:

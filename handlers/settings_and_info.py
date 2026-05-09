@@ -2,13 +2,13 @@
 import time
 from telegram import Update
 from telegram.ext import ContextTypes
-from utils.decorators import admin_required
+from utils.decorators import admin_required, require_perm
 from services import database as db
 
 
 # ─── 群规 ───
 
-@admin_required
+@require_perm("config")
 async def set_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """设置群规：/setrules <内容>"""
     if not context.args:
@@ -28,7 +28,7 @@ async def show_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── 配置 ───
 
-@admin_required
+@require_perm("config")
 async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看当前配置：/settings"""
     chat_id = update.effective_chat.id
@@ -58,7 +58,7 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("config")
 async def set_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """修改配置：/setconfig <key> <value>"""
     if len(context.args) < 2:
@@ -136,7 +136,7 @@ async def user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── 备注 ───
 
-@admin_required
+@require_perm("note")
 async def set_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """设置备注：/note @user <备注内容>"""
     target = None
@@ -165,7 +165,7 @@ async def set_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"✅ 已为 {display} 添加备注：{note_text}")
 
 
-@admin_required
+@require_perm("note")
 async def set_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """设置标签：/tags @user <标签1,标签2>"""
     target = None
@@ -195,7 +195,7 @@ async def set_tags(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── 黑名单 ───
 
-@admin_required
+@require_perm("blacklist")
 async def add_to_blacklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """添加黑名单：/blacklist @user [原因]"""
     target = None
@@ -233,7 +233,7 @@ async def add_to_blacklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"✅ 已将 {display} 加入黑名单")
 
 
-@admin_required
+@require_perm("blacklist")
 async def remove_from_blacklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """移除黑名单：/unblacklist @user"""
     target = None
@@ -265,7 +265,7 @@ async def remove_from_blacklist(update: Update, context: ContextTypes.DEFAULT_TY
         await update.effective_message.reply_text("❌ 该用户不在黑名单中")
 
 
-@admin_required
+@require_perm("blacklist")
 async def show_blacklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看黑名单：/blacklists"""
     chat_id = update.effective_chat.id
@@ -290,7 +290,7 @@ async def show_blacklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── 操作日志 ───
 
-@admin_required
+@require_perm("logs")
 async def show_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看日志：/logs [数量]"""
     limit = 20
@@ -318,7 +318,7 @@ async def show_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── 敏感词 ───
 
-@admin_required
+@require_perm("filter")
 async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """添加敏感词：/addword <词语>"""
     if not context.args:
@@ -330,7 +330,7 @@ async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"✅ 已添加敏感词：{word}")
 
 
-@admin_required
+@require_perm("filter")
 async def remove_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """移除敏感词：/delword <词语>"""
     if not context.args:
@@ -344,7 +344,7 @@ async def remove_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ 该词不在敏感词列表中")
 
 
-@admin_required
+@require_perm("filter")
 async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看敏感词：/words"""
     words = db.get_sensitive_words(update.effective_chat.id)
@@ -380,7 +380,7 @@ async def report_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-@admin_required
+@require_perm("logs")
 async def show_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看举报：/reports"""
     status = context.args[0] if context.args else "pending"
@@ -403,7 +403,7 @@ async def show_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("logs")
 async def resolve_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理举报：/resolve <ID> [done/dismiss]"""
     if len(context.args) < 1:

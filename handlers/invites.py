@@ -1,11 +1,11 @@
 """邀请链接管理"""
 from telegram import Update
 from telegram.ext import ContextTypes
-from utils.decorators import admin_required
+from utils.decorators import admin_required, require_perm
 from services import database as db
 
 
-@admin_required
+@require_perm("invite")
 async def create_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """创建邀请链接：/invite [过期分钟] [使用次数]"""
     expire_minutes = 0
@@ -48,7 +48,7 @@ async def create_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("invite")
 async def list_invites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看邀请链接：/invites"""
     chat_id = update.effective_chat.id
@@ -68,7 +68,7 @@ async def list_invites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("invite")
 async def revoke_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """撤销邀请链接：/revoke <链接>"""
     if not context.args:
@@ -87,7 +87,7 @@ async def revoke_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 撤销失败：{e}")
 
 
-@admin_required
+@require_perm("invite")
 async def invite_tracking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看谁邀请了谁：/whoinvited @user"""
     target = None

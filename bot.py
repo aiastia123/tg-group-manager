@@ -64,6 +64,9 @@ def main():
     app.add_handler(CommandHandler("setadmin", admin_management.set_admin))
     app.add_handler(CommandHandler("removeadmin", admin_management.remove_admin))
     app.add_handler(CommandHandler("admins", admin_management.list_admins))
+    app.add_handler(CommandHandler("addperm", admin_management.add_perm))
+    app.add_handler(CommandHandler("delperm", admin_management.del_perm))
+    app.add_handler(CommandHandler("perms", admin_management.show_perms))
 
     # 消息管理
     app.add_handler(CommandHandler("del", messages.delete_message))

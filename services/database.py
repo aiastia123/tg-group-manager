@@ -480,13 +480,51 @@ def reset_flood(chat_id: int, user_id: int):
         )
 
 
-# ─── 自定义管理员 ───
+# ─── 自定义管理员 & 权限系统 ───
 
-def add_custom_admin(chat_id: int, user_id: int, added_by: int, permissions: str = ""):
+# 可分配的权限列表
+ALL_PERMISSIONS = [
+    "kick",      # 踢出用户
+    "ban",       # 封禁/解封
+    "mute",      # 禁言/解禁
+    "warn",      # 警告
+    "delete",    # 删除消息
+    "pin",       # 置顶/取消置顶
+    "invite",    # 管理邀请链接
+    "admin",     # 管理其他管理员（含任命/撤职）
+    "config",    # 修改群组配置
+    "blacklist", # 黑名单管理
+    "filter",    # 敏感词管理
+    "logs",      # 查看操作日志
+    "announce",  # 发布群公告
+    "note",      # 用户备注/标签
+]
+
+
+def _parse_perms(permissions_str: str) -> set:
+    """解析权限字符串为 set"""
+    if not permissions_str:
+        return set()
+    return set(p.strip() for p in permissions_str.split(",") if p.strip() in ALL_PERMISSIONS)
+
+
+def _perms_to_str(perms: set) -> str:
+    """将权限 set 转为字符串存储"""
+    return ",".join(sorted(perms))
+
+
+def add_custom_admin(chat_id: int, user_id: int, added_by: int, permissions: str | set = ""):
+    """添加自定义管理员。permissions 可以是逗号分隔字符串或 set，空字符串/空 set 表示全部权限"""
+    if isinstance(permissions, set):
+        perms_str = _perms_to_str(permissions) if permissions else _perms_to_str(set(ALL_PERMISSIONS))
+    elif not permissions:
+        perms_str = _perms_to_str(set(ALL_PERMISSIONS))
+    else:
+        perms_str = permissions
     with get_db() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO custom_admins (chat_id, user_id, permissions, added_by, added_at) VALUES (?, ?, ?, ?, ?)",
-            (chat_id, user_id, permissions, added_by, time.time()),
+            (chat_id, user_id, perms_str, added_by, time.time()),
         )
 
 
@@ -512,6 +550,36 @@ def get_custom_admins(chat_id: int) -> list:
             "SELECT * FROM custom_admins WHERE chat_id=?", (chat_id,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_admin_permissions(chat_id: int, user_id: int) -> set:
+    """获取自定义管理员的具体权限集合。非自定义管理员返回空 set"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT permissions FROM custom_admins WHERE chat_id=? AND user_id=?",
+            (chat_id, user_id),
+        ).fetchone()
+    if not row:
+        return set()
+    perms = _parse_perms(row["permissions"])
+    # 如果权限为空，视为全部权限（兼容旧数据）
+    return perms if perms else set(ALL_PERMISSIONS)
+
+
+def set_admin_permissions(chat_id: int, user_id: int, perms: set):
+    """直接设置管理员的权限"""
+    perms_str = _perms_to_str(perms) if perms else _perms_to_str(set(ALL_PERMISSIONS))
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE custom_admins SET permissions=? WHERE chat_id=? AND user_id=?",
+            (perms_str, chat_id, user_id),
+        )
+
+
+def admin_has_permission(chat_id: int, user_id: int, perm: str) -> bool:
+    """检查自定义管理员是否拥有某个权限"""
+    perms = get_admin_permissions(chat_id, user_id)
+    return perm in perms
 
 
 # ─── 敏感词 ───

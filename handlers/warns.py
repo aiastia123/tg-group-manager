@@ -1,11 +1,11 @@
 """警告系统"""
 from telegram import Update
 from telegram.ext import ContextTypes
-from utils.decorators import admin_required
+from utils.decorators import admin_required, require_perm
 from services import database as db
 
 
-@admin_required
+@require_perm("warn")
 async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """警告用户：/warn @user [原因]"""
     target = await _get_target(update, context)
@@ -66,7 +66,7 @@ async def warns_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 
-@admin_required
+@require_perm("warn")
 async def reset_warns(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """清除警告：/resetwarns @user"""
     target = await _get_target(update, context)

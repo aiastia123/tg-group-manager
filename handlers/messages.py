@@ -1,11 +1,11 @@
 """消息管理：删除消息、置顶、群公告"""
 from telegram import Update
 from telegram.ext import ContextTypes
-from utils.decorators import admin_required
+from utils.decorators import admin_required, require_perm
 from services import database as db
 
 
-@admin_required
+@require_perm("delete")
 async def delete_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """删除消息：回复消息使用 /del，或 /del <数量> 批量删除"""
     chat_id = update.effective_chat.id
@@ -51,7 +51,7 @@ async def delete_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 删除失败：{e}")
 
 
-@admin_required
+@require_perm("pin")
 async def pin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """置顶消息：回复消息使用 /pin"""
     if not update.message.reply_to_message:
@@ -66,7 +66,7 @@ async def pin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 置顶失败：{e}")
 
 
-@admin_required
+@require_perm("pin")
 async def unpin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """取消置顶：回复消息使用 /unpin，或 /unpinall 取消所有"""
     if not update.message.reply_to_message:
@@ -81,7 +81,7 @@ async def unpin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 取消置顶失败：{e}")
 
 
-@admin_required
+@require_perm("pin")
 async def unpin_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """取消所有置顶"""
     try:
@@ -93,7 +93,7 @@ async def unpin_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 失败：{e}")
 
 
-@admin_required
+@require_perm("announce")
 async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """群公告：/announce <内容>"""
     if not context.args:

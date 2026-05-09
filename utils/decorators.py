@@ -2,47 +2,93 @@
 from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes
-from services.database import is_custom_admin
+from services.database import is_custom_admin, admin_has_permission
 
 
-async def is_bot_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """检查 bot 是否是群管理员"""
+async def _is_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None) -> bool:
+    """检查用户是否是 TG 原生管理员（群主/管理员）"""
     if not update.effective_chat:
         return False
-    bot_member = await update.effective_chat.get_member(context.bot.id)
-    return bot_member.status in ("administrator", "creator")
+    uid = user_id or update.effective_user.id
+    member = await update.effective_chat.get_member(uid)
+    return member.status in ("administrator", "creator")
 
 
 async def is_user_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None) -> bool:
-    """检查用户是否是群管理员（TG原生 或 bot自定义）"""
+    """检查用户是否是管理员（TG原生 或 bot自定义）"""
     if not update.effective_chat:
         return False
     uid = user_id or update.effective_user.id
     member = await update.effective_chat.get_member(uid)
     if member.status in ("administrator", "creator"):
         return True
-    # 检查自定义管理员
     return is_custom_admin(update.effective_chat.id, uid)
 
 
+async def check_permission(update: Update, context: ContextTypes.DEFAULT_TYPE, perm: str, user_id: int = None) -> bool:
+    """
+    检查用户是否有某个权限。
+    TG 群主/管理员默认拥有全部权限，自定义管理员按分配的权限检查。
+    """
+    if not update.effective_chat:
+        return False
+    uid = user_id or update.effective_user.id
+
+    # TG 群主/管理员 → 全部权限
+    member = await update.effective_chat.get_member(uid)
+    if member.status in ("administrator", "creator"):
+        return True
+
+    # 自定义管理员 → 按权限表检查
+    if is_custom_admin(update.effective_chat.id, uid):
+        return admin_has_permission(update.effective_chat.id, uid, perm)
+
+    return False
+
+
+# 权限 → 命令的映射
+PERM_LABELS = {
+    "kick": "踢出",
+    "ban": "封禁",
+    "mute": "禁言",
+    "warn": "警告",
+    "delete": "删消息",
+    "pin": "置顶",
+    "invite": "邀请链接",
+    "admin": "管理员管理",
+    "config": "群组配置",
+    "blacklist": "黑名单",
+    "filter": "敏感词",
+    "logs": "操作日志",
+    "announce": "群公告",
+    "note": "用户备注",
+}
+
+
+def require_perm(perm: str):
+    """装饰器：检查具体权限"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+            if not update.effective_user:
+                return
+            if not await check_permission(update, context, perm):
+                label = PERM_LABELS.get(perm, perm)
+                await update.effective_message.reply_text(f"⛔ 你没有「{label}」权限")
+                return
+            return await func(update, context, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 def admin_required(func):
-    """装饰器：仅管理员可用"""
+    """装饰器：仅管理员可用（向后兼容，等价于 require_perm 但不检查具体权限）"""
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         if not update.effective_user:
             return
         if not await is_user_admin(update, context):
             await update.effective_message.reply_text("⛔ 此命令仅管理员可用")
-            return
-        return await func(update, context, *args, **kwargs)
-    return wrapper
-
-
-def private_chat_only(func):
-    """装饰器：仅私聊可用"""
-    @wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        if update.effective_chat and update.effective_chat.type != "private":
             return
         return await func(update, context, *args, **kwargs)
     return wrapper
