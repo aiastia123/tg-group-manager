@@ -28,19 +28,24 @@ def auto_delete_in_group(func):
 
         chat_id = update.effective_chat.id
 
-        # 包装 reply_text，追踪 bot 回复的消息
-        original_reply = update.effective_message.reply_text
+        # 包装 bot.send_message，追踪 bot 在该群发送的所有消息
+        original_send_message = context.bot.send_message
 
-        async def tracked_reply(*reply_args, **reply_kwargs):
-            msg = await original_reply(*reply_args, **reply_kwargs)
-            # 安排删除 bot 回复
-            asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, AUTO_DELETE_DELAY))
+        async def tracked_send_message(*send_args, **send_kwargs):
+            msg = await original_send_message(*send_args, **send_kwargs)
+            # 只追踪同一群聊的消息
+            if msg.chat.id == chat_id:
+                asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, AUTO_DELETE_DELAY))
             return msg
 
-        update.effective_message.reply_text = tracked_reply
+        context.bot.send_message = tracked_send_message
 
-        # 执行原始命令 handler
-        await func(update, context, *args, **kwargs)
+        try:
+            # 执行原始命令 handler
+            await func(update, context, *args, **kwargs)
+        finally:
+            # 恢复原始 send_message
+            context.bot.send_message = original_send_message
 
         # 安排删除用户的命令消息
         asyncio.create_task(_delayed_delete(context.bot, chat_id, update.message.message_id, AUTO_DELETE_DELAY))
