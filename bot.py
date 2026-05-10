@@ -158,6 +158,12 @@ def main():
     # 验证码按钮回调
     app.add_handler(CallbackQueryHandler(captcha_welcome.handle_captcha_button, pattern=r"^captcha_"))
 
+    # 私聊消息处理（验证码答案）— 放在群消息过滤器之前
+    app.add_handler(MessageHandler(
+        filters.ChatType.PRIVATE & ~filters.COMMAND,
+        captcha_welcome.handle_captcha_answer,
+    ))
+
     # 消息过滤（低优先级，放最后）
     app.add_handler(MessageHandler(
         filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.StatusUpdate.ALL,

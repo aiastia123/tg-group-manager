@@ -28,7 +28,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """启动命令：/start [深链参数]"""
-    # 处理深链参数
+    # 处理深链参数 — 验证码
+    if context.args and context.args[0].startswith("verify_"):
+        from handlers.captcha_welcome import handle_verify_deep_link
+        token = context.args[0][7:]
+        await handle_verify_deep_link(update, context, token)
+        return
+
+    # 处理深链参数 — 邀请链接
     if context.args and context.args[0].startswith("invite_"):
         token = context.args[0][7:]  # 去掉 "invite_" 前缀
         pending = db.get_pending_invite(token)

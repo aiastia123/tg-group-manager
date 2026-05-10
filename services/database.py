@@ -103,6 +103,7 @@ def init_db():
                 user_id INTEGER NOT NULL,
                 message_id INTEGER NOT NULL,
                 answer TEXT NOT NULL,
+                token TEXT DEFAULT '',
                 created_at REAL NOT NULL,
                 PRIMARY KEY (chat_id, user_id)
             );
@@ -381,6 +382,45 @@ def delete_captcha(chat_id: int, user_id: int):
     with get_db() as conn:
         conn.execute(
             "DELETE FROM captcha WHERE chat_id=? AND user_id=?", (chat_id, user_id)
+        )
+
+
+
+def save_captcha_with_token(chat_id: int, user_id: int, message_id: int, answer: str, token: str):
+    """保存验证码（含深链 token）"""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO captcha (chat_id, user_id, message_id, answer, token, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (chat_id, user_id, message_id, answer, token, time.time()),
+        )
+
+
+def get_captcha_by_token(token: str) -> dict | None:
+    """通过深链 token 查找验证码"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM captcha WHERE token=?",
+            (token,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_captcha_by_user(user_id: int) -> dict | None:
+    """通过用户 ID 查找待验证记录"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM captcha WHERE user_id=? AND answer != 'pending'",
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_captcha_answer(chat_id: int, user_id: int, answer: str):
+    """更新验证码答案"""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE captcha SET answer=? WHERE chat_id=? AND user_id=?",
+            (answer, chat_id, user_id),
         )
 
 
