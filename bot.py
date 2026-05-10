@@ -1,11 +1,14 @@
 """Telegram 群组管理 Bot — 主入口"""
+import asyncio
 import logging
 import os
+from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ContextTypes,
     filters,
 )
 from config import BOT_TOKEN
@@ -28,6 +31,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 群内命令和回复自动删除时间（秒）
+AUTO_DELETE_DELAY = 30
+
+
+async def auto_delete(context: ContextTypes.DEFAULT_TYPE):
+    """自动删除群里的命令消息和 bot 回复"""
+    for msg_id in context.job.data:
+        try:
+            await context.bot.delete_message(context.job.chat_id, msg_id)
+        except Exception:
+            pass
+
+
+async def post_init(application):
+    """Bot 初始化后：注册命令菜单"""
+    # 私聊命令菜单
+    private_commands = [
+        BotCommand("start", "启动 bot / 获取邀请链接"),
+        BotCommand("help", "查看帮助信息"),
+    ]
+    await application.bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+
+    # 群聊命令菜单
+    group_commands = [
+        BotCommand("help", "查看帮助"),
+        BotCommand("report", "举报用户"),
+        BotCommand("kick", "踢出用户"),
+        BotCommand("ban", "封禁用户"),
+        BotCommand("tempban", "临时封禁"),
+        BotCommand("unban", "解封用户"),
+        BotCommand("mute", "禁言用户"),
+        BotCommand("unmute", "解除禁言"),
+        BotCommand("warn", "警告用户"),
+        BotCommand("warns", "查看警告"),
+        BotCommand("resetwarns", "清除警告"),
+        BotCommand("invite", "创建邀请链接"),
+        BotCommand("invites", "邀请链接列表"),
+        BotCommand("revoke", "撤销邀请链接"),
+        BotCommand("del", "删除消息"),
+        BotCommand("pin", "置顶消息"),
+        BotCommand("unpin", "取消置顶"),
+        BotCommand("settings", "群组设置"),
+        BotCommand("rules", "查看群规"),
+        BotCommand("info", "用户信息"),
+        BotCommand("admins", "管理员列表"),
+        BotCommand("blacklist", "黑名单管理"),
+        BotCommand("blacklists", "查看黑名单"),
+        BotCommand("words", "敏感词列表"),
+        BotCommand("logs", "操作日志"),
+    ]
+    await application.bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
+    logger.info("Bot 命令菜单已注册")
+
 
 def main():
     if not BOT_TOKEN:
@@ -38,7 +94,7 @@ def main():
     init_db()
     logger.info("数据库初始化完成")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     # ─── 注册命令 ───
 
@@ -116,7 +172,30 @@ def main():
         msg_filters.filter_messages,
     ))
 
-    # 启动
+    # ─── 群内命令自动删除（group=1 与 group=0 的命令处理器并行执行）───
+    async def _delayed_delete(bot, chat_id, msg_id, delay):
+        await asyncio.sleep(delay)
+        try:
+            await bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+
+    async def auto_delete_group_command(update, context):
+        """自动删除群内的命令消息"""
+        if update.effective_chat and update.effective_chat.type != "private" and update.message:
+            asyncio.create_task(
+                _delayed_delete(
+                    context.bot, update.effective_chat.id,
+                    update.message.message_id, AUTO_DELETE_DELAY,
+                )
+            )
+
+    app.add_handler(
+        MessageHandler(filters.COMMAND & filters.ChatType.GROUPS, auto_delete_group_command),
+        group=1,
+    )
+
+    # ─── 启动 ───
     logger.info("Bot 启动中...")
     app.run_polling(drop_pending_updates=True)
 
