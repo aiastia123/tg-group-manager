@@ -28,24 +28,36 @@ def auto_delete_in_group(func):
 
         chat_id = update.effective_chat.id
 
-        # 包装 bot.send_message，追踪 bot 在该群发送的所有消息
+        # 收集 bot 回复消息 ID 的容器
+        bot_message_ids = []
         original_send_message = context.bot.send_message
 
         async def tracked_send_message(*send_args, **send_kwargs):
             msg = await original_send_message(*send_args, **send_kwargs)
-            # 只追踪同一群聊的消息
             if msg.chat.id == chat_id:
-                asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, AUTO_DELETE_DELAY))
+                bot_message_ids.append(msg.message_id)
             return msg
 
-        context.bot.send_message = tracked_send_message
+        # 用 object.__setattr__ 绕过 frozen 限制
+        orig = context.bot.send_message
+        try:
+            object.__setattr__(context.bot, 'send_message', tracked_send_message)
+        except (AttributeError, TypeError):
+            # 如果仍无法设置，则不追踪 bot 回复
+            orig = None
 
         try:
-            # 执行原始命令 handler
             await func(update, context, *args, **kwargs)
         finally:
-            # 恢复原始 send_message
-            context.bot.send_message = original_send_message
+            if orig is not None:
+                try:
+                    object.__setattr__(context.bot, 'send_message', orig)
+                except (AttributeError, TypeError):
+                    pass
+
+        # 安排删除 bot 回复消息
+        for msg_id in bot_message_ids:
+            asyncio.create_task(_delayed_delete(context.bot, chat_id, msg_id, AUTO_DELETE_DELAY))
 
         # 安排删除用户的命令消息
         asyncio.create_task(_delayed_delete(context.bot, chat_id, update.message.message_id, AUTO_DELETE_DELAY))
