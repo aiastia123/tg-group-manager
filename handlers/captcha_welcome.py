@@ -12,16 +12,17 @@ logger = logging.getLogger(__name__)
 
 # 禁言权限：只禁止发消息，其他权限全部保留（用户仍可查看群）
 # 注意：ChatPermissions 默认值全是 False，必须显式设 True
+# 发送类全部 False（真正禁言），管理类 True（保持能查看群）
 MUTE_PERMISSIONS = ChatPermissions(
     can_send_messages=False,
-    can_send_audios=True,
-    can_send_documents=True,
-    can_send_photos=True,
-    can_send_videos=True,
-    can_send_video_notes=True,
-    can_send_voice_notes=True,
-    can_send_polls=True,
-    can_send_other_messages=True,
+    can_send_audios=False,
+    can_send_documents=False,
+    can_send_photos=False,
+    can_send_videos=False,
+    can_send_video_notes=False,
+    can_send_voice_notes=False,
+    can_send_polls=False,
+    can_send_other_messages=False,
     can_add_web_page_previews=True,
     can_change_info=True,
     can_invite_users=True,
