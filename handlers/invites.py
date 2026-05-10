@@ -1,6 +1,7 @@
 """邀请链接管理"""
+import secrets
 import time
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.decorators import admin_required, require_perm
 from services import database as db
@@ -41,26 +42,33 @@ async def create_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     db.add_log(chat_id, update.effective_user.id, "create_invite", details=f"创建邀请链接 {invite_link.invite_link}")
 
-    # 构建邀请链接消息
-    msg = f"✅ 邀请链接已创建：\n{invite_link.invite_link}"
+    # 生成唯一 token，保存待领取的邀请链接
+    token = secrets.token_urlsafe(16)
+    db.save_pending_invite(
+        token=token,
+        chat_id=chat_id,
+        link=invite_link.invite_link,
+        user_id=update.effective_user.id,
+        expires_at=invite_link.expire_date.timestamp() if invite_link.expire_date else 0,
+        member_limit=member_limit,
+    )
+
+    # 构建深链按钮
+    bot_username = context.bot.username
+    deep_link = f"https://t.me/{bot_username}?start=invite_{token}"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 点击获取邀请链接", url=deep_link)]
+    ])
+
+    msg = "✅ 邀请链接已创建"
     if expire_minutes:
         msg += f"\n有效期：{expire_minutes} 分钟"
     if member_limit:
         msg += f"\n使用次数：{member_limit}"
+    msg += "\n\n👇 点击下方按钮获取链接"
 
-    # 通过私聊发送给管理员
-    try:
-        await context.bot.send_message(
-            chat_id=update.effective_user.id,
-            text=msg,
-        )
-        # 群内只回复确认，不暴露链接
-        await update.effective_message.reply_text("✅ 邀请链接已通过私聊发送给你")
-    except Exception:
-        # 如果私聊失败（用户未启动 bot），退回到群内发送
-        await update.effective_message.reply_text(
-            msg + "\n\n⚠️ 私聊发送失败，请先私聊 bot 发送 /start 以启动对话"
-        )
+    await update.effective_message.reply_text(msg, reply_markup=keyboard)
 
 
 @require_perm("invite")

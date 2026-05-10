@@ -142,6 +142,17 @@ def init_db():
                 PRIMARY KEY (chat_id, user_id)
             );
 
+            CREATE TABLE IF NOT EXISTS pending_invites (
+                token TEXT PRIMARY KEY,
+                chat_id INTEGER NOT NULL,
+                link TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                expires_at REAL DEFAULT 0,
+                member_limit INTEGER DEFAULT 0,
+                claimed INTEGER DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS sensitive_words (
                 chat_id INTEGER NOT NULL,
                 word TEXT NOT NULL,
@@ -580,6 +591,32 @@ def admin_has_permission(chat_id: int, user_id: int, perm: str) -> bool:
     """检查自定义管理员是否拥有某个权限"""
     perms = get_admin_permissions(chat_id, user_id)
     return perm in perms
+
+
+# ─── 待领取邀请链接 ───
+
+def save_pending_invite(token: str, chat_id: int, link: str, user_id: int, expires_at: float = 0, member_limit: int = 0):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO pending_invites (token, chat_id, link, user_id, created_at, expires_at, member_limit) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (token, chat_id, link, user_id, time.time(), expires_at, member_limit),
+        )
+
+
+def get_pending_invite(token: str) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM pending_invites WHERE token=? AND claimed=0",
+            (token,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def claim_pending_invite(token: str):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE pending_invites SET claimed=1 WHERE token=?", (token,)
+        )
 
 
 # ─── 敏感词 ───

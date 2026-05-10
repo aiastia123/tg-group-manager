@@ -1,6 +1,8 @@
 """帮助命令"""
+import time
 from telegram import Update
 from telegram.ext import ContextTypes
+from services import database as db
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -25,7 +27,40 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """启动命令：/start"""
+    """启动命令：/start [深链参数]"""
+    # 处理深链参数
+    if context.args and context.args[0].startswith("invite_"):
+        token = context.args[0][7:]  # 去掉 "invite_" 前缀
+        pending = db.get_pending_invite(token)
+
+        if not pending:
+            await update.effective_message.reply_text("❌ 邀请链接不存在或已被领取")
+            return
+
+        # 检查是否过期
+        if pending["expires_at"] and pending["expires_at"] < time.time():
+            await update.effective_message.reply_text("❌ 邀请链接已过期")
+            return
+
+        # 标记为已领取
+        db.claim_pending_invite(token)
+
+        # 构建邀请链接消息
+        msg = f"🔗 你的邀请链接：\n\n{pending['link']}"
+        if pending["member_limit"]:
+            msg += f"\n使用次数限制：{pending['member_limit']}"
+
+        # 尝试获取群名称
+        try:
+            chat = await context.bot.get_chat(pending["chat_id"])
+            msg += f"\n群组：{chat.title}"
+        except Exception:
+            pass
+
+        await update.effective_message.reply_text(msg)
+        return
+
+    # 普通启动
     if update.effective_chat and update.effective_chat.type == "private":
         await update.effective_message.reply_text(
             "👋 你好！我是群组管理 Bot。\n\n"
