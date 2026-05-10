@@ -1,9 +1,13 @@
 """入群验证（CAPTCHA）、欢迎/告别消息、黑名单检查"""
 import asyncio
+import logging
+import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.ext import ContextTypes
 from services import database as db
 from utils.captcha import generate_math_captcha
+
+logger = logging.getLogger(__name__)
 
 
 async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,7 +73,10 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
 
     if not query.message or not query.from_user:
-        await query.answer("❌ 无法处理", show_alert=True)
+        try:
+            await query.answer()
+        except Exception:
+            pass
         return
 
     chat_id = query.message.chat.id
@@ -77,16 +84,34 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
 
     captcha = db.get_captcha(chat_id, user_id)
     if not captcha:
-        await query.answer("❌ 验证码不存在或已过期", show_alert=True)
+        # 验证码已过期，移除按钮防止继续点击
+        try:
+            await query.answer("❌ 验证码不存在或已过期", show_alert=True)
+        except Exception:
+            # callback 已过期无法 answer，至少尝试移除按钮
+            try:
+                await query.answer()
+            except Exception:
+                pass
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         return
 
     # 检查答案
     callback_data = query.data
     if callback_data == f"captcha_{captcha['answer']}_{user_id}":
-        # 验证成功
-        await query.answer("✅ 验证通过！")
+        # 验证成功 — 先 answer 停止加载动画
+        try:
+            await query.answer("✅ 验证通过！")
+        except Exception:
+            pass
+
         db.delete_captcha(chat_id, user_id)
         db.remove_mute(chat_id, user_id)
+
+        # 解除禁言
         try:
             await context.bot.restrict_chat_member(
                 chat_id, user_id,
@@ -109,7 +134,12 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
             )
         except Exception:
             pass
-        await query.edit_message_text(f"✅ {query.from_user.first_name} 验证通过，欢迎加入！")
+
+        # 编辑消息（移除按钮）
+        try:
+            await query.edit_message_text(f"✅ {query.from_user.first_name} 验证通过，欢迎加入！")
+        except Exception:
+            pass
 
         # 发送欢迎消息
         settings = db.get_settings(chat_id)
@@ -120,7 +150,11 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
             )
             await query.message.chat.send_message(text)
     else:
-        await query.answer("❌ 答案错误，请重试", show_alert=True)
+        # 答案错误
+        try:
+            await query.answer("❌ 答案错误，请重试", show_alert=True)
+        except Exception:
+            pass
 
 
 async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, member, settings):
@@ -162,7 +196,7 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
 
     # 禁言用户直到验证通过（完全禁言，不允许任何操作）
     timeout = settings["captcha_timeout"]
-    until = __import__('time').time() + timeout
+    until = time.time() + timeout
     try:
         await context.bot.restrict_chat_member(
             chat_id, member.id,
@@ -188,8 +222,10 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
     except Exception:
         pass
 
-    # 设置超时自动踢出
-    await _schedule_captcha_timeout(context, chat_id, member.id, msg.message_id, timeout)
+    # 设置超时自动踢出（后台任务，不阻塞当前处理）
+    asyncio.create_task(
+        _schedule_captcha_timeout(context, chat_id, member.id, msg.message_id, timeout)
+    )
 
 
 async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id, message_id, timeout):
@@ -200,20 +236,26 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
     if captcha:
         db.delete_captcha(chat_id, user_id)
         try:
-            await context.bot.ban_chat_member(chat_id, user_id)
-            await context.bot.unban_chat_member(chat_id, user_id)
+            # 先编辑消息移除按钮，避免用户点击已过期的 callback
             await context.bot.edit_message_text(
-                "⏰ 验证超时，已自动踢出",
+                "⏰ 验证超时，已移除",
                 chat_id=chat_id,
                 message_id=message_id,
             )
         except Exception:
             pass
 
+        try:
+            # 踢出用户
+            await context.bot.ban_chat_member(chat_id, user_id)
+            # 立即解除封禁（only_if_banned=True 防止提示用户被封禁）
+            await context.bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
+        except Exception:
+            pass
+
 
 async def _mute_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE, member, settings):
     """新用户静默期"""
-    import time
     chat_id = update.effective_chat.id
     minutes = settings["new_user_mute_minutes"]
     until = time.time() + minutes * 60
