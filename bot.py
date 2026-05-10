@@ -81,7 +81,7 @@ def main():
     init_db()
     logger.info("数据库初始化完成")
 
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).concurrent_updates(True).build()
 
     # ─── 辅助函数：注册带自动删除的命令 ───
     def add_cmd(name, handler):
