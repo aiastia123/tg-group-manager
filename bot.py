@@ -19,6 +19,7 @@ from handlers import (
     captcha_welcome,
     settings_and_info,
     filters as msg_filters,
+    help_handler,
 )
 
 logging.basicConfig(
@@ -40,6 +41,10 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     # ─── 注册命令 ───
+
+    # 帮助与启动
+    app.add_handler(CommandHandler("start", help_handler.start_command))
+    app.add_handler(CommandHandler("help", help_handler.help_command))
 
     # 用户管理
     app.add_handler(CommandHandler("kick", user_management.kick_user))
