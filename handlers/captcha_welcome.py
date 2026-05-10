@@ -1,6 +1,6 @@
 """入群验证（CAPTCHA）、欢迎/告别消息、黑名单检查"""
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.ext import ContextTypes
 from services import database as db
 from utils.captcha import generate_math_captcha
@@ -67,9 +67,9 @@ async def on_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理验证码按钮回调"""
     query = update.callback_query
-    await query.answer()
 
     if not query.message or not query.from_user:
+        await query.answer("❌ 无法处理", show_alert=True)
         return
 
     chat_id = query.message.chat.id
@@ -84,15 +84,28 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
     callback_data = query.data
     if callback_data == f"captcha_{captcha['answer']}_{user_id}":
         # 验证成功
+        await query.answer("✅ 验证通过！")
         db.delete_captcha(chat_id, user_id)
         db.remove_mute(chat_id, user_id)
         try:
             await context.bot.restrict_chat_member(
                 chat_id, user_id,
-                can_send_messages=True,
-                can_send_media_messages=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_audios=True,
+                    can_send_documents=True,
+                    can_send_photos=True,
+                    can_send_videos=True,
+                    can_send_video_notes=True,
+                    can_send_voice_notes=True,
+                    can_send_polls=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True,
+                    can_change_info=True,
+                    can_invite_users=True,
+                    can_pin_messages=True,
+                    can_manage_topics=True,
+                ),
             )
         except Exception:
             pass
@@ -147,15 +160,28 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
     # 保存验证码
     db.save_captcha(chat_id, member.id, msg.message_id, answer)
 
-    # 禁言用户直到验证通过
+    # 禁言用户直到验证通过（完全禁言，不允许任何操作）
     timeout = settings["captcha_timeout"]
     until = __import__('time').time() + timeout
     try:
         await context.bot.restrict_chat_member(
             chat_id, member.id,
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
+            permissions=ChatPermissions(
+                can_send_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
+                can_manage_topics=False,
+            ),
             until_date=int(until),
         )
         db.add_mute(chat_id, member.id, until)
@@ -195,9 +221,22 @@ async def _mute_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE, mem
     try:
         await context.bot.restrict_chat_member(
             chat_id, member.id,
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
+            permissions=ChatPermissions(
+                can_send_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
+                can_manage_topics=False,
+            ),
             until_date=int(until),
         )
         db.add_mute(chat_id, member.id, until)

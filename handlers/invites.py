@@ -1,4 +1,5 @@
 """邀请链接管理"""
+import time
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.decorators import admin_required, require_perm
@@ -27,7 +28,7 @@ async def create_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     invite_link = await context.bot.create_chat_invite_link(
         chat_id,
-        expire_date=expire_minutes * 60 if expire_minutes > 0 else None,
+        expire_date=int(time.time()) + expire_minutes * 60 if expire_minutes > 0 else None,
         member_limit=member_limit if member_limit > 0 else None,
     )
 
@@ -40,12 +41,26 @@ async def create_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     db.add_log(chat_id, update.effective_user.id, "create_invite", details=f"创建邀请链接 {invite_link.invite_link}")
 
+    # 构建邀请链接消息
     msg = f"✅ 邀请链接已创建：\n{invite_link.invite_link}"
     if expire_minutes:
         msg += f"\n有效期：{expire_minutes} 分钟"
     if member_limit:
         msg += f"\n使用次数：{member_limit}"
-    await update.effective_message.reply_text(msg)
+
+    # 通过私聊发送给管理员
+    try:
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=msg,
+        )
+        # 群内只回复确认，不暴露链接
+        await update.effective_message.reply_text("✅ 邀请链接已通过私聊发送给你")
+    except Exception:
+        # 如果私聊失败（用户未启动 bot），退回到群内发送
+        await update.effective_message.reply_text(
+            msg + "\n\n⚠️ 私聊发送失败，请先私聊 bot 发送 /start 以启动对话"
+        )
 
 
 @require_perm("invite")

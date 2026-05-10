@@ -1,6 +1,6 @@
 """用户管理：踢出、封禁、临时封禁、禁言、解禁"""
 import time
-from telegram import Update
+from telegram import Update, ChatPermissions
 from telegram.ext import ContextTypes
 from utils.decorators import admin_required, require_perm
 from services import database as db
@@ -172,9 +172,22 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.restrict_chat_member(
             chat_id, target.id,
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
+            permissions=ChatPermissions(
+                can_send_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
+                can_manage_topics=False,
+            ),
             until_date=int(until),
         )
     except Exception as e:
@@ -206,10 +219,22 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.restrict_chat_member(
             chat_id, target.id,
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True,
+            permissions=ChatPermissions(
+                can_send_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+                can_change_info=True,
+                can_invite_users=True,
+                can_pin_messages=True,
+                can_manage_topics=True,
+            ),
         )
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 解除禁言失败：{e}")
