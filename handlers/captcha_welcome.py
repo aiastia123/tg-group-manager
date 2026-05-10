@@ -1,11 +1,12 @@
 """入群验证（CAPTCHA）、欢迎/告别消息、黑名单检查"""
 import asyncio
 import logging
+import secrets
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from telegram.ext import ContextTypes
 from services import database as db
-from utils.captcha import generate_math_captcha
+from utils.captcha import generate_image_captcha
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,6 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if settings["captcha_enabled"]:
             await _send_captcha(update, context, member, settings)
         elif settings["new_user_mute_minutes"] > 0:
-            # 没有验证码但开启了静默期
             await _mute_new_user(update, context, member, settings)
 
 
@@ -69,52 +69,75 @@ async def on_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理验证码按钮回调"""
+    """处理验证码按钮回调（群内按钮仅 answer，实际验证在私聊）"""
     query = update.callback_query
+    try:
+        await query.answer("请在私聊中完成验证")
+    except Exception:
+        pass
 
-    if not query.message or not query.from_user:
-        try:
-            await query.answer()
-        except Exception:
-            pass
-        return
 
-    chat_id = query.message.chat.id
-    user_id = query.from_user.id
-
-    captcha = db.get_captcha(chat_id, user_id)
+async def handle_verify_deep_link(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str):
+    """处理 /start verify_TOKEN 深链 — 私聊发送图片验证码"""
+    captcha = db.get_captcha_by_token(token)
     if not captcha:
-        # 验证码已过期，移除按钮防止继续点击
-        try:
-            await query.answer("❌ 验证码不存在或已过期", show_alert=True)
-        except Exception:
-            # callback 已过期无法 answer，至少尝试移除按钮
-            try:
-                await query.answer()
-            except Exception:
-                pass
-        try:
-            await query.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
+        await update.effective_message.reply_text("❌ 验证链接不存在或已过期")
         return
 
-    # 检查答案
-    callback_data = query.data
-    if callback_data == f"captcha_{captcha['answer']}_{user_id}":
-        # 验证成功 — 先 answer 停止加载动画
-        try:
-            await query.answer("✅ 验证通过！")
-        except Exception:
-            pass
+    settings = db.get_settings(captcha["chat_id"])
+    timeout = settings.get("captcha_timeout", 120)
+    if time.time() - captcha["created_at"] > timeout:
+        db.delete_captcha(captcha["chat_id"], captcha["user_id"])
+        await update.effective_message.reply_text("❌ 验证已超时，请重新入群")
+        return
 
-        db.delete_captcha(chat_id, user_id)
-        db.remove_mute(chat_id, user_id)
+    if update.effective_user.id != captcha["user_id"]:
+        await update.effective_message.reply_text("❌ 此验证链接不属于你")
+        return
 
-        # 解除禁言
+    image_bytes, answer = generate_image_captcha()
+    db.update_captcha_answer(captcha["chat_id"], captcha["user_id"], answer)
+
+    remaining = int(timeout - (time.time() - captcha["created_at"]))
+    await update.effective_message.reply_photo(
+        photo=image_bytes,
+        caption=(
+            "🔐 请输入图片中的验证码（不区分大小写）\n\n"
+            f"⏰ 剩余时间：{remaining}秒\n"
+            "💡 直接在此聊天中输入答案即可"
+        ),
+    )
+
+
+async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """处理私聊中的验证码答案"""
+    if not update.effective_chat or update.effective_chat.type != "private":
+        return
+    if not update.message or not update.message.text:
+        return
+
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    captcha = db.get_captcha_by_user(user_id)
+    if not captcha:
+        return
+
+    settings = db.get_settings(captcha["chat_id"])
+    timeout = settings.get("captcha_timeout", 120)
+    if time.time() - captcha["created_at"] > timeout:
+        db.delete_captcha(captcha["chat_id"], captcha["user_id"])
+        await update.effective_message.reply_text("❌ 验证已超时，请重新入群")
+        return
+
+    if text.upper() == captcha["answer"].upper():
+        # 验证通过
+        db.delete_captcha(captcha["chat_id"], captcha["user_id"])
+        db.remove_mute(captcha["chat_id"], captcha["user_id"])
+
         try:
             await context.bot.restrict_chat_member(
-                chat_id, user_id,
+                captcha["chat_id"], captcha["user_id"],
                 permissions=ChatPermissions(
                     can_send_messages=True,
                     can_send_audios=True,
@@ -132,70 +155,62 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
                     can_manage_topics=True,
                 ),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"解除禁言失败: {e}")
 
-        # 编辑消息（移除按钮）
+        await update.effective_message.reply_text("✅ 验证通过！你现在可以在群中发言了")
+
         try:
-            await query.edit_message_text(f"✅ {query.from_user.first_name} 验证通过，欢迎加入！")
-        except Exception:
-            pass
-
-        # 发送欢迎消息
-        settings = db.get_settings(chat_id)
-        if settings["welcome_enabled"]:
-            text = settings["welcome_text"].format(
-                user=query.from_user.first_name,
-                chat=query.message.chat.title or "本群",
+            await context.bot.edit_message_text(
+                f"✅ {update.effective_user.first_name} 验证通过，欢迎加入！",
+                chat_id=captcha["chat_id"],
+                message_id=captcha["message_id"],
             )
-            await query.message.chat.send_message(text)
-    else:
-        # 答案错误
-        try:
-            await query.answer("❌ 答案错误，请重试", show_alert=True)
         except Exception:
             pass
+
+        try:
+            if settings["welcome_enabled"]:
+                chat = await context.bot.get_chat(captcha["chat_id"])
+                welcome_text = settings["welcome_text"].format(
+                    user=update.effective_user.first_name,
+                    chat=chat.title or "本群",
+                )
+                await context.bot.send_message(captcha["chat_id"], welcome_text)
+        except Exception:
+            pass
+    else:
+        # 答案错误，重新生成验证码
+        image_bytes, answer = generate_image_captcha()
+        db.update_captcha_answer(captcha["chat_id"], captcha["user_id"], answer)
+        await update.effective_message.reply_photo(
+            photo=image_bytes,
+            caption="❌ 答案错误，请重新输入：",
+        )
 
 
 async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, member, settings):
-    """发送验证码"""
+    """发送验证码（深链模式）"""
     chat_id = update.effective_chat.id
-    question, answer = generate_math_captcha()
+    token = secrets.token_urlsafe(16)
+    answer = "pending"
 
-    # 生成错误答案作为干扰项
-    import random
-    wrong_answers = set()
-    correct = int(answer)
-    while len(wrong_answers) < 3:
-        wrong = correct + random.choice([-3, -2, -1, 1, 2, 3, 4, 5])
-        if wrong != correct and wrong >= 0:
-            wrong_answers.add(str(wrong))
+    bot_username = context.bot.username
+    deep_link = f"https://t.me/{bot_username}?start=verify_{token}"
 
-    all_answers = [answer] + list(wrong_answers)
-    random.shuffle(all_answers)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 点击进行人机验证", url=deep_link)]
+    ])
 
-    keyboard = []
-    row = []
-    for a in all_answers:
-        row.append(InlineKeyboardButton(str(a), callback_data=f"captcha_{a}_{member.id}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    timeout = settings["captcha_timeout"]
     msg = await update.effective_chat.send_message(
-        f"🔐 {member.first_name} 请在 {settings['captcha_timeout']}秒 内完成验证：\n\n"
-        f"{question}",
-        reply_markup=reply_markup,
+        f"🔐 {member.first_name} 请在 {timeout}秒 内完成验证：\n\n"
+        "👇 点击下方按钮进入私聊完成验证",
+        reply_markup=keyboard,
     )
 
-    # 保存验证码
-    db.save_captcha(chat_id, member.id, msg.message_id, answer)
+    db.save_captcha_with_token(chat_id, member.id, msg.message_id, answer, token)
 
-    # 禁言用户直到验证通过（完全禁言，不允许任何操作）
-    timeout = settings["captcha_timeout"]
     until = time.time() + timeout
     try:
         await context.bot.restrict_chat_member(
@@ -222,7 +237,6 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
     except Exception:
         pass
 
-    # 设置超时自动踢出（后台任务，不阻塞当前处理）
     asyncio.create_task(
         _schedule_captcha_timeout(context, chat_id, member.id, msg.message_id, timeout)
     )
@@ -236,7 +250,6 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
     if captcha:
         db.delete_captcha(chat_id, user_id)
         try:
-            # 先编辑消息移除按钮，避免用户点击已过期的 callback
             await context.bot.edit_message_text(
                 "⏰ 验证超时，已移除",
                 chat_id=chat_id,
@@ -246,9 +259,7 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
             pass
 
         try:
-            # 踢出用户
             await context.bot.ban_chat_member(chat_id, user_id)
-            # 立即解除封禁（only_if_banned=True 防止提示用户被封禁）
             await context.bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
         except Exception:
             pass
