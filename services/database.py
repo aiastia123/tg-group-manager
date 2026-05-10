@@ -163,6 +163,12 @@ def init_db():
             );
         """)
 
+        # 数据库迁移：为已有 captcha 表添加 token 列
+        try:
+            conn.execute("ALTER TABLE captcha ADD COLUMN token TEXT DEFAULT ''")
+        except Exception:
+            pass  # 列已存在，忽略
+
 
 # ─── 配置管理 ───
 
