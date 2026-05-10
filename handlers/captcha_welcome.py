@@ -10,6 +10,43 @@ from utils.captcha import generate_image_captcha
 
 logger = logging.getLogger(__name__)
 
+# 禁言权限：只禁止发消息，其他权限全部保留（用户仍可查看群）
+# 注意：ChatPermissions 默认值全是 False，必须显式设 True
+MUTE_PERMISSIONS = ChatPermissions(
+    can_send_messages=False,
+    can_send_audios=True,
+    can_send_documents=True,
+    can_send_photos=True,
+    can_send_videos=True,
+    can_send_video_notes=True,
+    can_send_voice_notes=True,
+    can_send_polls=True,
+    can_send_other_messages=True,
+    can_add_web_page_previews=True,
+    can_change_info=True,
+    can_invite_users=True,
+    can_pin_messages=True,
+    can_manage_topics=True,
+)
+
+# 正常权限：恢复全部
+FULL_PERMISSIONS = ChatPermissions(
+    can_send_messages=True,
+    can_send_audios=True,
+    can_send_documents=True,
+    can_send_photos=True,
+    can_send_videos=True,
+    can_send_video_notes=True,
+    can_send_voice_notes=True,
+    can_send_polls=True,
+    can_send_other_messages=True,
+    can_add_web_page_previews=True,
+    can_change_info=True,
+    can_invite_users=True,
+    can_pin_messages=True,
+    can_manage_topics=True,
+)
+
 
 async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """新成员入群处理"""
@@ -20,15 +57,12 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings = db.get_settings(chat_id)
 
     for member in update.message.new_chat_members:
-        # 跳过 bot 自己
         if member.id == context.bot.id:
             continue
 
-        # 记录邀请追踪
         inviter_id = update.message.from_user.id if update.message.from_user.id != member.id else 0
         db.track_invite(chat_id, member.id, inviter_id)
 
-        # 黑名单检查
         if db.is_blacklisted(chat_id, member.id):
             try:
                 await context.bot.ban_chat_member(chat_id, member.id)
@@ -39,7 +73,6 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             continue
 
-        # 验证码
         if settings["captcha_enabled"]:
             await _send_captcha(update, context, member, settings)
         elif settings["new_user_mute_minutes"] > 0:
@@ -69,7 +102,7 @@ async def on_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """处理验证码按钮回调（群内按钮仅 answer，实际验证在私聊）"""
+    """处理验证码按钮回调"""
     query = update.callback_query
     try:
         await query.answer("请在私聊中完成验证")
@@ -78,7 +111,7 @@ async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_verify_deep_link(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str):
-    """处理 /start verify_TOKEN 深链 — 私聊发送图片验证码"""
+    """处理 /start verify_TOKEN 深链"""
     captcha = db.get_captcha_by_token(token)
     if not captcha:
         await update.effective_message.reply_text("❌ 验证链接不存在或已过期")
@@ -131,36 +164,19 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if text.upper() == captcha["answer"].upper():
-        # 验证通过
         db.delete_captcha(captcha["chat_id"], captcha["user_id"])
         db.remove_mute(captcha["chat_id"], captcha["user_id"])
 
         try:
             await context.bot.restrict_chat_member(
                 captcha["chat_id"], captcha["user_id"],
-                permissions=ChatPermissions(
-                    can_send_messages=True,
-                    can_send_audios=True,
-                    can_send_documents=True,
-                    can_send_photos=True,
-                    can_send_videos=True,
-                    can_send_video_notes=True,
-                    can_send_voice_notes=True,
-                    can_send_polls=True,
-                    can_send_other_messages=True,
-                    can_add_web_page_previews=True,
-                    can_change_info=True,
-                    can_invite_users=True,
-                    can_pin_messages=True,
-                    can_manage_topics=True,
-                ),
+                permissions=FULL_PERMISSIONS,
             )
         except Exception as e:
             logger.warning(f"解除禁言失败: {e}")
 
         await update.effective_message.reply_text("✅ 验证通过！你现在可以在群中发言了")
 
-        # 删除群内验证消息
         try:
             await context.bot.delete_message(
                 chat_id=captcha["chat_id"],
@@ -180,7 +196,6 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
     else:
-        # 答案错误，重新生成验证码
         image_bytes, answer = generate_image_captcha()
         db.update_captcha_answer(captcha["chat_id"], captcha["user_id"], answer)
         await update.effective_message.reply_photo(
@@ -215,22 +230,7 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
     try:
         await context.bot.restrict_chat_member(
             chat_id, member.id,
-            permissions=ChatPermissions(
-                can_send_messages=False,
-                can_send_audios=False,
-                can_send_documents=False,
-                can_send_photos=False,
-                can_send_videos=False,
-                can_send_video_notes=False,
-                can_send_voice_notes=False,
-                can_send_polls=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False,
-                can_manage_topics=False,
-            ),
+            permissions=MUTE_PERMISSIONS,
             until_date=int(until),
         )
         db.add_mute(chat_id, member.id, until)
@@ -249,7 +249,6 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
     captcha = db.get_captcha(chat_id, user_id)
     if captcha:
         db.delete_captcha(chat_id, user_id)
-        # 删除群内验证消息
         try:
             await context.bot.delete_message(
                 chat_id=chat_id,
@@ -274,22 +273,7 @@ async def _mute_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE, mem
     try:
         await context.bot.restrict_chat_member(
             chat_id, member.id,
-            permissions=ChatPermissions(
-                can_send_messages=False,
-                can_send_audios=False,
-                can_send_documents=False,
-                can_send_photos=False,
-                can_send_videos=False,
-                can_send_video_notes=False,
-                can_send_voice_notes=False,
-                can_send_polls=False,
-                can_send_other_messages=False,
-                can_add_web_page_previews=False,
-                can_change_info=False,
-                can_invite_users=False,
-                can_pin_messages=False,
-                can_manage_topics=False,
-            ),
+            permissions=MUTE_PERMISSIONS,
             until_date=int(until),
         )
         db.add_mute(chat_id, member.id, until)
