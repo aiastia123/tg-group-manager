@@ -2,7 +2,8 @@ version: "3.8"
 
 services:
   group-manager:
-    build: .
+    image: ghcr.io/aiastia123/tg-group-manager:main
+    # build: .  # 本地构建时取消注释
     container_name: tg-group-manager
     restart: unless-stopped
     environment:
