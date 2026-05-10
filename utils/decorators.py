@@ -1,8 +1,51 @@
 """权限检查工具"""
+import asyncio
 from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes
 from services.database import is_custom_admin, admin_has_permission
+
+# 群内消息自动删除延迟（秒）
+AUTO_DELETE_DELAY = 30
+
+
+async def _delayed_delete(bot, chat_id, msg_id, delay):
+    """延迟删除消息"""
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id, msg_id)
+    except Exception:
+        pass
+
+
+def auto_delete_in_group(func):
+    """装饰器：群聊中自动删除用户的命令消息和 bot 的回复"""
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # 私聊不处理
+        if not update.effective_chat or update.effective_chat.type == "private":
+            return await func(update, context, *args, **kwargs)
+
+        chat_id = update.effective_chat.id
+
+        # 包装 reply_text，追踪 bot 回复的消息
+        original_reply = update.effective_message.reply_text
+
+        async def tracked_reply(*reply_args, **reply_kwargs):
+            msg = await original_reply(*reply_args, **reply_kwargs)
+            # 安排删除 bot 回复
+            asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, AUTO_DELETE_DELAY))
+            return msg
+
+        update.effective_message.reply_text = tracked_reply
+
+        # 执行原始命令 handler
+        await func(update, context, *args, **kwargs)
+
+        # 安排删除用户的命令消息
+        asyncio.create_task(_delayed_delete(context.bot, chat_id, update.message.message_id, AUTO_DELETE_DELAY))
+
+    return wrapper
 
 
 async def _is_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None) -> bool:

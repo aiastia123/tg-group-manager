@@ -1,5 +1,4 @@
 """Telegram 群组管理 Bot — 主入口"""
-import asyncio
 import logging
 import os
 from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
@@ -8,7 +7,6 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    ContextTypes,
     filters,
 )
 from config import BOT_TOKEN
@@ -24,24 +22,13 @@ from handlers import (
     filters as msg_filters,
     help_handler,
 )
+from utils.decorators import auto_delete_in_group
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-
-# 群内命令和回复自动删除时间（秒）
-AUTO_DELETE_DELAY = 30
-
-
-async def auto_delete(context: ContextTypes.DEFAULT_TYPE):
-    """自动删除群里的命令消息和 bot 回复"""
-    for msg_id in context.job.data:
-        try:
-            await context.bot.delete_message(context.job.chat_id, msg_id)
-        except Exception:
-            pass
 
 
 async def post_init(application):
@@ -96,68 +83,73 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
+    # ─── 辅助函数：注册带自动删除的命令 ───
+    def add_cmd(name, handler):
+        """注册命令，自动包装 auto_delete_in_group 装饰器"""
+        app.add_handler(CommandHandler(name, auto_delete_in_group(handler)))
+
     # ─── 注册命令 ───
 
-    # 帮助与启动
+    # 帮助与启动（不需要自动删除）
     app.add_handler(CommandHandler("start", help_handler.start_command))
     app.add_handler(CommandHandler("help", help_handler.help_command))
 
     # 用户管理
-    app.add_handler(CommandHandler("kick", user_management.kick_user))
-    app.add_handler(CommandHandler("ban", user_management.ban_user))
-    app.add_handler(CommandHandler("tempban", user_management.temp_ban))
-    app.add_handler(CommandHandler("unban", user_management.unban_user))
-    app.add_handler(CommandHandler("mute", user_management.mute_user))
-    app.add_handler(CommandHandler("unmute", user_management.unmute_user))
+    add_cmd("kick", user_management.kick_user)
+    add_cmd("ban", user_management.ban_user)
+    add_cmd("tempban", user_management.temp_ban)
+    add_cmd("unban", user_management.unban_user)
+    add_cmd("mute", user_management.mute_user)
+    add_cmd("unmute", user_management.unmute_user)
 
     # 警告系统
-    app.add_handler(CommandHandler("warn", warns.warn_user))
-    app.add_handler(CommandHandler("warns", warns.warns_list))
-    app.add_handler(CommandHandler("resetwarns", warns.reset_warns))
+    add_cmd("warn", warns.warn_user)
+    add_cmd("warns", warns.warns_list)
+    add_cmd("resetwarns", warns.reset_warns)
 
     # 邀请链接
-    app.add_handler(CommandHandler("invite", invites.create_invite))
-    app.add_handler(CommandHandler("invites", invites.list_invites))
-    app.add_handler(CommandHandler("revoke", invites.revoke_invite))
-    app.add_handler(CommandHandler("whoinvited", invites.invite_tracking))
+    add_cmd("invite", invites.create_invite)
+    add_cmd("invites", invites.list_invites)
+    add_cmd("revoke", invites.revoke_invite)
+    add_cmd("whoinvited", invites.invite_tracking)
 
     # 管理员
-    app.add_handler(CommandHandler("setadmin", admin_management.set_admin))
-    app.add_handler(CommandHandler("removeadmin", admin_management.remove_admin))
-    app.add_handler(CommandHandler("admins", admin_management.list_admins))
-    app.add_handler(CommandHandler("addperm", admin_management.add_perm))
-    app.add_handler(CommandHandler("delperm", admin_management.del_perm))
-    app.add_handler(CommandHandler("perms", admin_management.show_perms))
+    add_cmd("setadmin", admin_management.set_admin)
+    add_cmd("removeadmin", admin_management.remove_admin)
+    add_cmd("admins", admin_management.list_admins)
+    add_cmd("addperm", admin_management.add_perm)
+    add_cmd("delperm", admin_management.del_perm)
+    add_cmd("perms", admin_management.show_perms)
 
     # 消息管理
-    app.add_handler(CommandHandler("del", messages.delete_message))
-    app.add_handler(CommandHandler("pin", messages.pin_message))
-    app.add_handler(CommandHandler("unpin", messages.unpin_message))
-    app.add_handler(CommandHandler("unpinall", messages.unpin_all))
-    app.add_handler(CommandHandler("announce", messages.announce))
+    add_cmd("del", messages.delete_message)
+    add_cmd("pin", messages.pin_message)
+    add_cmd("unpin", messages.unpin_message)
+    add_cmd("unpinall", messages.unpin_all)
+    add_cmd("announce", messages.announce)
 
     # 配置与信息
-    app.add_handler(CommandHandler("setrules", settings_and_info.set_rules))
-    app.add_handler(CommandHandler("rules", settings_and_info.show_rules))
-    app.add_handler(CommandHandler("settings", settings_and_info.settings_menu))
-    app.add_handler(CommandHandler("setconfig", settings_and_info.set_config))
-    app.add_handler(CommandHandler("info", settings_and_info.user_info))
-    app.add_handler(CommandHandler("note", settings_and_info.set_note))
-    app.add_handler(CommandHandler("tags", settings_and_info.set_tags))
-    app.add_handler(CommandHandler("blacklist", settings_and_info.add_to_blacklist))
-    app.add_handler(CommandHandler("unblacklist", settings_and_info.remove_from_blacklist))
-    app.add_handler(CommandHandler("blacklists", settings_and_info.show_blacklist))
-    app.add_handler(CommandHandler("logs", settings_and_info.show_logs))
+    add_cmd("setrules", settings_and_info.set_rules)
+    add_cmd("rules", settings_and_info.show_rules)
+    add_cmd("settings", settings_and_info.settings_menu)
+    add_cmd("setconfig", settings_and_info.set_config)
+    add_cmd("info", settings_and_info.user_info)
+    add_cmd("note", settings_and_info.set_note)
+    add_cmd("tags", settings_and_info.set_tags)
+    add_cmd("blacklist", settings_and_info.add_to_blacklist)
+    add_cmd("unblacklist", settings_and_info.remove_from_blacklist)
+    add_cmd("blacklists", settings_and_info.show_blacklist)
+    add_cmd("logs", settings_and_info.show_logs)
 
     # 敏感词
-    app.add_handler(CommandHandler("addword", settings_and_info.add_word))
-    app.add_handler(CommandHandler("delword", settings_and_info.remove_word))
-    app.add_handler(CommandHandler("words", settings_and_info.list_words))
+    add_cmd("addword", settings_and_info.add_word)
+    add_cmd("delword", settings_and_info.remove_word)
+    add_cmd("words", settings_and_info.list_words)
 
     # 举报
-    app.add_handler(CommandHandler("report", settings_and_info.report_user))
-    app.add_handler(CommandHandler("reports", settings_and_info.show_reports))
-    app.add_handler(CommandHandler("resolve", settings_and_info.resolve_report))
+    add_cmd("report", settings_and_info.report_user)
+    add_cmd("reports", settings_and_info.show_reports)
+    add_cmd("resolve", settings_and_info.resolve_report)
 
     # 入群/退群
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, captcha_welcome.on_new_member))
@@ -171,29 +163,6 @@ def main():
         filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.StatusUpdate.ALL,
         msg_filters.filter_messages,
     ))
-
-    # ─── 群内命令自动删除（group=1 与 group=0 的命令处理器并行执行）───
-    async def _delayed_delete(bot, chat_id, msg_id, delay):
-        await asyncio.sleep(delay)
-        try:
-            await bot.delete_message(chat_id, msg_id)
-        except Exception:
-            pass
-
-    async def auto_delete_group_command(update, context):
-        """自动删除群内的命令消息"""
-        if update.effective_chat and update.effective_chat.type != "private" and update.message:
-            asyncio.create_task(
-                _delayed_delete(
-                    context.bot, update.effective_chat.id,
-                    update.message.message_id, AUTO_DELETE_DELAY,
-                )
-            )
-
-    app.add_handler(
-        MessageHandler(filters.COMMAND & filters.ChatType.GROUPS, auto_delete_group_command),
-        group=1,
-    )
 
     # ─── 启动 ───
     logger.info("Bot 启动中...")
