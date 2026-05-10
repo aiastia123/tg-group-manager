@@ -223,7 +223,7 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
 
 
 async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id, message_id, timeout):
-    """验证超时后踢出"""
+    """验证超时后：踢出 + 加入黑名单10分钟"""
     await asyncio.sleep(timeout)
 
     captcha = db.get_captcha(chat_id, user_id)
@@ -237,11 +237,39 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
         except Exception:
             pass
 
+        # 封禁用户（Telegram 级别）
         try:
             await context.bot.ban_chat_member(chat_id, user_id)
-            await context.bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
         except Exception:
             pass
+
+        # 加入 bot 黑名单，10 分钟后自动解除
+        blacklist_expire = time.time() + 10 * 60
+        db.add_blacklist(
+            chat_id, user_id,
+            reason="验证码超时未完成，自动封禁10分钟",
+            admin_id=context.bot.id,
+            expires_at=blacklist_expire,
+        )
+
+        # 10 分钟后自动解封
+        asyncio.create_task(
+            _schedule_auto_unban(context, chat_id, user_id, 10 * 60)
+        )
+
+
+async def _schedule_auto_unban(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id, delay_seconds):
+    """定时自动解封：解除 Telegram 封禁 + 移除黑名单"""
+    await asyncio.sleep(delay_seconds)
+
+    # 移除黑名单记录
+    db.remove_blacklist(chat_id, user_id)
+
+    # 解除 Telegram 封禁（允许重新加入）
+    try:
+        await context.bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
+    except Exception:
+        pass
 
 
 async def _mute_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE, member, settings):

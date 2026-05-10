@@ -74,6 +74,7 @@ def init_db():
                 reason TEXT DEFAULT '',
                 admin_id INTEGER NOT NULL,
                 created_at REAL NOT NULL,
+                expires_at REAL DEFAULT 0,
                 PRIMARY KEY (chat_id, user_id)
             );
 
@@ -166,6 +167,12 @@ def init_db():
         # 数据库迁移：为已有 captcha 表添加 token 列
         try:
             conn.execute("ALTER TABLE captcha ADD COLUMN token TEXT DEFAULT ''")
+        except Exception:
+            pass  # 列已存在，忽略
+
+        # 数据库迁移：为已有 blacklist 表添加 expires_at 列
+        try:
+            conn.execute("ALTER TABLE blacklist ADD COLUMN expires_at REAL DEFAULT 0")
         except Exception:
             pass  # 列已存在，忽略
 
@@ -284,11 +291,12 @@ def get_user_note(chat_id: int, user_id: int) -> dict | None:
 
 # ─── 黑名单 ───
 
-def add_blacklist(chat_id: int, user_id: int, reason: str, admin_id: int):
+def add_blacklist(chat_id: int, user_id: int, reason: str, admin_id: int, expires_at: float = 0):
+    """加入黑名单。expires_at > 0 表示定时自动解除，0 表示永久"""
     with get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO blacklist (chat_id, user_id, reason, admin_id, created_at) VALUES (?, ?, ?, ?, ?)",
-            (chat_id, user_id, reason, admin_id, time.time()),
+            "INSERT OR REPLACE INTO blacklist (chat_id, user_id, reason, admin_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (chat_id, user_id, reason, admin_id, time.time(), expires_at),
         )
 
 
@@ -301,11 +309,22 @@ def remove_blacklist(chat_id: int, user_id: int) -> bool:
 
 
 def is_blacklisted(chat_id: int, user_id: int) -> bool:
+    """检查是否在黑名单中（自动忽略已过期的记录）"""
+    now = time.time()
     with get_db() as conn:
         row = conn.execute(
-            "SELECT 1 FROM blacklist WHERE chat_id=? AND user_id=?", (chat_id, user_id)
+            "SELECT expires_at FROM blacklist WHERE chat_id=? AND user_id=?",
+            (chat_id, user_id),
         ).fetchone()
-    return row is not None
+        if row is None:
+            return False
+        # 如果设置了过期时间且已过期，则视为不在黑名单中
+        if row["expires_at"] > 0 and row["expires_at"] <= now:
+            conn.execute(
+                "DELETE FROM blacklist WHERE chat_id=? AND user_id=?", (chat_id, user_id)
+            )
+            return False
+        return True
 
 
 def get_blacklist(chat_id: int) -> list:
