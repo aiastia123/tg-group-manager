@@ -160,9 +160,9 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
 
         await update.effective_message.reply_text("✅ 验证通过！你现在可以在群中发言了")
 
+        # 删除群内验证消息
         try:
-            await context.bot.edit_message_text(
-                f"✅ {update.effective_user.first_name} 验证通过，欢迎加入！",
+            await context.bot.delete_message(
                 chat_id=captcha["chat_id"],
                 message_id=captcha["message_id"],
             )
@@ -249,9 +249,9 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
     captcha = db.get_captcha(chat_id, user_id)
     if captcha:
         db.delete_captcha(chat_id, user_id)
+        # 删除群内验证消息
         try:
-            await context.bot.edit_message_text(
-                "⏰ 验证超时，已移除",
+            await context.bot.delete_message(
                 chat_id=chat_id,
                 message_id=message_id,
             )
