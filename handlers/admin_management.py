@@ -176,11 +176,10 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         )
         return
 
-    # 构建 promote 参数
+    # 构建 promote 参数：选中的设 True，未选的设 False
     promote_kwargs = {}
-    for perm_key in valid_tg:
-        api_key, _ = TG_PERM_MAP[perm_key]
-        promote_kwargs[api_key] = True
+    for perm_key, (api_key, _) in TG_PERM_MAP.items():
+        promote_kwargs[api_key] = perm_key in valid_tg
 
     try:
         await context.bot.promote_chat_member(chat_id, target.id, **promote_kwargs)
