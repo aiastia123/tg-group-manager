@@ -208,6 +208,23 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
     has_topics = "topics" in valid_tg
 
     try:
+        # 第一步：先完全降级，清除所有旧权限
+        await context.bot.promote_chat_member(
+            chat_id, target.id,
+            is_anonymous=False,
+            can_manage_chat=False,
+            can_post_messages=False,
+            can_edit_messages=False,
+            can_delete_messages=False,
+            can_manage_video_chats=False,
+            can_restrict_members=False,
+            can_promote_members=False,
+            can_change_info=False,
+            can_invite_users=False,
+            can_pin_messages=False,
+            can_manage_topics=False,
+        )
+        # 第二步：重新提升为管理员，只设置需要的权限
         await context.bot.promote_chat_member(
             chat_id, target.id,
             is_anonymous=False,
