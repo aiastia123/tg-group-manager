@@ -40,41 +40,16 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not valid_perms or "all" in [p.lower() for p in perm_args]:
         valid_perms = set(ALL_PERMISSIONS)
 
-    # 检查调用者是否是群主（只有群主能设置 TG 原生管理员）
-    caller = await update.effective_chat.get_member(update.effective_user.id)
-    if caller.status != "creator":
-        # 非 TG 群主 → 只能设置为自定义管理员
-        db.add_custom_admin(chat_id, target.id, update.effective_user.id, permissions=valid_perms)
-        db.add_log(chat_id, update.effective_user.id, "set_admin", target.id,
-                   f"设置 {display} 为自定义管理员，权限：{','.join(valid_perms)}")
-
-        perm_list = _format_perms(valid_perms)
-        await update.effective_message.reply_text(
-            f"✅ {display} 已设为 Bot 管理员\n"
-            f"权限：{perm_list}\n\n"
-            "注：仅 TG 群主可提升为 TG 原生管理员"
-        )
-        return
-
-    # TG 群主 → 同时提升为 TG 管理员
-    try:
-        await context.bot.promote_chat_member(
-            chat_id, target.id,
-            can_manage_chat=True,
-            can_delete_messages=True,
-            can_restrict_members=True,
-            can_invite_users=True,
-            can_pin_messages=True,
-        )
-    except Exception as e:
-        await update.effective_message.reply_text(f"⚠️ TG 管理员提升失败（{e}），但仍设为 Bot 管理员")
-
+    # 只设置 Bot 命令权限，不改变 TG 管理员身份
     db.add_custom_admin(chat_id, target.id, update.effective_user.id, permissions=valid_perms)
     db.add_log(chat_id, update.effective_user.id, "set_admin", target.id,
-               f"设置 {display} 为管理员，权限：{','.join(valid_perms)}")
+               f"设置 {display} 为 Bot 管理员，权限：{','.join(valid_perms)}")
 
     perm_list = _format_perms(valid_perms)
-    await update.effective_message.reply_text(f"✅ {display} 已设为管理员\n权限：{perm_list}")
+    await update.effective_message.reply_text(
+        f"✅ {display} 已设为 Bot 管理员\n"
+        f"Bot 权限：{perm_list}"
+    )
 
 
 @require_perm("admin")
@@ -210,7 +185,9 @@ async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("admin")
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """取消管理员：/removeadmin @user"""
+    """取消管理员：/removeadmin @user
+    同时撤销 Bot 管理员权限和 TG 管理员身份
+    """
     target = await _get_target(update, context)
     if not target:
         return
@@ -218,55 +195,86 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     display = target.username or target.first_name
 
-    # 尝试移除 TG 管理员
-    try:
-        await context.bot.promote_chat_member(
-            chat_id, target.id,
-            is_anonymous=False,
-            can_manage_chat=False,
-            can_delete_messages=False,
-            can_manage_video_chats=False,
-            can_restrict_members=False,
-            can_promote_members=False,
-            can_change_info=False,
-            can_invite_users=False,
-            can_post_messages=False,
-            can_edit_messages=False,
-            can_pin_messages=False,
-            can_manage_topics=False,
-        )
-    except Exception:
-        pass
+    # 检查目标身份
+    target_member = await update.effective_chat.get_member(target.id)
+    is_tg_admin = target_member.status == "administrator"
+    is_creator = target_member.status == "creator"
+    was_custom = db.is_custom_admin(chat_id, target.id)
 
-    db.remove_custom_admin(chat_id, target.id)
+    if is_creator:
+        await update.effective_message.reply_text("❌ 无法移除群主")
+        return
+
+    if not is_tg_admin and not was_custom:
+        await update.effective_message.reply_text(f"❌ {display} 不是管理员")
+        return
+
+    msg = ""
+
+    # 撤销 TG 管理员身份
+    if is_tg_admin:
+        try:
+            await context.bot.promote_chat_member(
+                chat_id, target.id,
+                is_anonymous=False,
+                can_manage_chat=False,
+                can_delete_messages=False,
+                can_manage_video_chats=False,
+                can_restrict_members=False,
+                can_promote_members=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_post_messages=False,
+                can_edit_messages=False,
+                can_pin_messages=False,
+                can_manage_topics=False,
+            )
+            msg += "✅ TG 管理员身份已撤销\n"
+        except Exception as e:
+            msg += f"⚠️ TG 管理员身份撤销失败：{e}\n"
+
+    # 移除 Bot 管理员权限
+    if was_custom:
+        db.remove_custom_admin(chat_id, target.id)
+        msg += "✅ Bot 管理员权限已移除\n"
+
     db.add_log(chat_id, update.effective_user.id, "remove_admin", target.id,
                f"取消 {display} 的管理员")
-    await update.effective_message.reply_text(f"✅ 已取消 {display} 的管理员")
+    await update.effective_message.reply_text(msg.strip())
 
 
 @admin_required
 async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """查看管理员列表：/admins"""
     chat_id = update.effective_chat.id
+    bot_id = context.bot.id
     custom = db.get_custom_admins(chat_id)
 
     administrators = await context.bot.get_chat_administrators(chat_id)
+
+    # 收集 TG 管理员 ID（用于去重）
+    tg_admin_ids = set()
     msg = "📋 管理员列表：\n\n"
     msg += "🔹 TG 管理员：\n"
     for admin in administrators:
-        user = admin.user
-        name = user.username or user.first_name
+        # 跳过 bot 自身
+        if admin.user.id == bot_id:
+            continue
+        tg_admin_ids.add(admin.user.id)
+        name = admin.user.username or admin.user.first_name or f"用户{admin.user.id}"
         role = "群主" if admin.status == "creator" else "管理员"
         msg += f"  • {name}（{role}，全部权限）\n"
 
-    if custom:
+    # Bot 管理员：排除已是 TG 管理员的，避免重复
+    bot_only_admins = [a for a in custom if a["user_id"] not in tg_admin_ids]
+    if bot_only_admins:
         msg += "\n🔹 Bot 管理员：\n"
-        for a in custom:
+        for a in bot_only_admins:
             try:
                 member = await context.bot.get_chat_member(chat_id, a["user_id"])
-                name = member.user.username or member.user.first_name
+                name = member.user.username or member.user.first_name or f"用户{a['user_id']}"
             except Exception:
-                name = str(a["user_id"])
+                name = f"用户{a['user_id']}"
             perms = db.get_admin_permissions(chat_id, a["user_id"])
             if perms == set(ALL_PERMISSIONS):
                 perm_text = "全部权限"
