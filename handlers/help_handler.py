@@ -92,18 +92,47 @@ _FULL_HELP = """📖 **群组管理 Bot 命令帮助**
 /resetwarns <用户ID或回复> — 清除警告
 
 ━━━ 🔗 邀请链接 ━━━
-/invite [过期分钟] [使用次数] — 创建邀请链接（私聊发送）
+/invite [过期分钟] [使用次数] — 管理员创建邀请链接
+/invite — 普通用户创建邀请链接（需管理员授权）
+/set_invite all [次数] — 允许所有用户邀请（默认1人）
+/set_invite <用户ID> [次数] — 允许特定用户邀请（默认1人）
+/set_invite off — 关闭所有普通用户邀请权限
+/set_invite off <用户ID> — 关闭特定用户邀请权限
+/set_invite list — 查看当前邀请权限配置
 /invites — 查看邀请链接列表
 /revoke <链接> — 撤销邀请链接
 /whoinvited <用户ID或回复> — 查看邀请来源
 
-━━━ 🛡️ 管理员 ━━━
-/setadmin <用户ID> — 设为管理员
+━━━ 🛡️ 管理员管理 ━━━
+/setadmin <用户ID> [权限...] — 设为管理员
+  不指定权限则默认全部权限
+  例：/setadmin 123456 — 全部权限
+  例：/setadmin 123456 kick ban warn — 只有踢出、封禁、警告权限
 /removeadmin <用户ID> — 移除管理员
 /admins — 查看管理员列表
-/addperm <用户ID> <权限> — 添加权限
-/delperm <用户ID> <权限> — 移除权限
-/perms <用户ID> — 查看权限
+
+━━━ 🔑 权限管理 ━━━
+可用权限列表：
+  kick — 踢出用户
+  ban — 封禁/解封
+  mute — 禁言/解禁
+  warn — 警告
+  delete — 删除消息
+  pin — 置顶/取消置顶
+  invite — 管理邀请链接
+  admin — 管理其他管理员
+  config — 修改群组配置
+  blacklist — 黑名单管理
+  filter — 敏感词管理
+  logs — 查看操作日志
+  announce — 发布群公告
+  note — 用户备注/标签
+
+/addperm <用户ID> <权限...> — 追加权限
+  例：/addperm 123456 kick ban
+/delperm <用户ID> <权限...> — 移除权限
+  例：/delperm 123456 ban
+/perms <用户ID> — 查看用户权限详情
 
 ━━━ 📝 消息管理 ━━━
 /del — 删除回复的消息
