@@ -1,13 +1,13 @@
 """管理员设置 & 权限管理"""
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import BadRequest
 from utils.decorators import admin_required, require_perm, PERM_LABELS
 from services import database as db
 from services.database import ALL_PERMISSIONS
 
-# TG 管理员权限映射
+# TG 管理员权限映射（manage 是隐式基础权限，不暴露给用户）
 TG_PERM_MAP = {
-    "manage": ("can_manage_chat", "管理群组"),
     "delete": ("can_delete_messages", "删除消息"),
     "restrict": ("can_restrict_members", "限制成员"),
     "invite": ("can_invite_users", "邀请用户"),
@@ -45,13 +45,12 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
   blacklist（黑名单管理）
   filter（敏感词管理）
   logs（查看操作日志）
-  announce（发布群公告）
+  announce（群公告）
   note（用户备注/标签）
 
 ━━━ TG 可用权限 ━━━
   all — 全部权限
-  none — 撤销管理员身份（TG 不支持无权限管理员）
-  manage（管理群组）
+  none — 无权限管理员（仅保留管理员头衔）
   delete（删除消息）
   restrict（限制成员）
   invite（邀请用户）
@@ -66,7 +65,7 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
   /setadmin bot 123456 kick warn — 只有踢出和警告
   /setadmin tg 123456 all — 全部 TG 管理权限
   /setadmin tg 123456 delete pin — 只能删消息和置顶
-  /setadmin tg 123456 none — 撤销 TG 管理员身份
+  /setadmin tg 123456 none — 无权限 TG 管理员（仅头衔）
   /setadmin bot 123456 none — 无权限 Bot 管理员
   /setadmin off 123456 — 移除所有管理员身份"""
 
@@ -168,7 +167,7 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
             "❌ 请指定 TG 权限\n\n"
             "用法：/setadmin tg <用户ID或回复> <权限...>\n"
             "输入 all 获取全部权限，或指定具体权限\n"
-            "可用权限：all, manage, delete, restrict, invite, pin, video, promote, info, topics\n\n"
+            f"可用权限：all, none, {', '.join(TG_ALL_PERMS)}\n\n"
             "示例：\n"
             "  /setadmin tg 123456 all — 全部权限\n"
             "  /setadmin tg 123456 delete pin — 只能删消息和置顶"
@@ -196,13 +195,13 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
             )
             return
 
-    # none = 撤销管理员身份（Telegram 不支持完全无权限的管理员）
+    # none = 无权限管理员（保留管理员头衔，仅 can_manage_chat=True）
     if is_none:
         try:
             await context.bot.promote_chat_member(
                 chat_id, target.id,
                 is_anonymous=False,
-                can_manage_chat=False,
+                can_manage_chat=True,
                 can_post_messages=False,
                 can_edit_messages=False,
                 can_delete_messages=False,
@@ -215,11 +214,21 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
                 can_manage_topics=False,
             )
             db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
-                       f"撤销 {display} 的 TG 管理员身份（none）")
+                       f"设置 {display} 为无权限 TG 管理员（none）")
             await update.effective_message.reply_text(
-                f"✅ {display} 的 TG 管理员身份已撤销\n"
-                f"ℹ️ Telegram 不支持无权限管理员，已自动降级为普通用户"
+                f"✅ {display} 已设为无权限 TG 管理员（仅保留管理员头衔）\n"
+                f"💡 如需彻底移除管理员身份，请使用 /setadmin off"
             )
+        except BadRequest as e:
+            err_msg = str(e).lower()
+            if "not enough rights" in err_msg or "bad request" in err_msg:
+                await update.effective_message.reply_text(
+                    f"❌ 设置失败：当前 Telegram 版本可能不支持无权限管理员\n"
+                    f"📝 错误详情：{e}\n"
+                    f"💡 请使用 /setadmin off 彻底移除管理员身份"
+                )
+            else:
+                await update.effective_message.reply_text(f"❌ 操作失败：{e}")
         except Exception as e:
             await update.effective_message.reply_text(f"❌ 操作失败：{e}")
         return
@@ -234,7 +243,6 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         return
 
     # 构建 promote 参数：can_manage_chat 是 TG 管理员基础权限，必须始终为 True
-    # 否则 Telegram API 可能隐式启用关联权限（如 pin 随 delete 自动开启）
     has_delete = "delete" in valid_tg
     has_restrict = "restrict" in valid_tg
     has_invite = "invite" in valid_tg
@@ -260,12 +268,53 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
             can_pin_messages=has_pin,
             can_manage_topics=has_topics,
         )
-        perm_text = ', '.join(_format_tg_perm(p) for p in sorted(valid_tg))
+
+        # 读取 TG 实际授予的权限（Telegram 可能自动关联授予额外权限）
+        actual_perms = await _get_actual_tg_perms(update.effective_chat, target.id)
+
+        # 检查是否有 Telegram 自动附加的权限，尝试二次调用取消
+        extra = actual_perms - valid_tg
+        if extra:
+            try:
+                await context.bot.promote_chat_member(
+                    chat_id, target.id,
+                    is_anonymous=False,
+                    can_manage_chat=True,
+                    can_post_messages=False,
+                    can_edit_messages=False,
+                    can_delete_messages=has_delete,
+                    can_manage_video_chats=has_video,
+                    can_restrict_members=has_restrict,
+                    can_promote_members=has_promote,
+                    can_change_info=has_info,
+                    can_invite_users=has_invite,
+                    can_pin_messages=has_pin,
+                    can_manage_topics=has_topics,
+                )
+                # 再次读取实际权限
+                actual_perms = await _get_actual_tg_perms(update.effective_chat, target.id)
+                extra = actual_perms - valid_tg
+            except Exception:
+                pass  # 二次调用失败也不影响
+
+        perm_text = ', '.join(_format_tg_perm(p) for p in sorted(actual_perms))
+
+        # 检查二次调用后是否仍有自动附加的权限
+        warning = ""
+        if extra:
+            extra_text = ', '.join(_format_tg_perm(p) for p in sorted(extra))
+            warning = (
+                f"\n\n⚠️ 注意：Telegram 自动附加了以下权限（服务端行为，无法通过二次调用取消）：\n"
+                f"  {extra_text}\n"
+                f"💡 Telegram 会将「删除消息」和「置顶消息」视为关联权限，授予其中一个会自动启用另一个。"
+            )
+
         db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
-                   f"设置 {display} 为 TG 管理员，权限：{','.join(valid_tg)}")
+                   f"设置 {display} 为 TG 管理员，请求权限：{','.join(valid_tg)}，实际权限：{','.join(actual_perms)}")
         await update.effective_message.reply_text(
             f"✅ {display} 已设为 TG 管理员\n"
-            f"TG 权限：{perm_text}"
+            f"TG 实际权限：{perm_text}"
+            f"{warning}"
         )
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 设置 TG 管理员失败：{e}")
@@ -297,10 +346,10 @@ async def _remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
 
     if is_tg_admin:
         try:
+            # 不传 can_manage_chat，让 Telegram 自动 demote（更兼容）
             await context.bot.promote_chat_member(
                 chat_id, target.id,
                 is_anonymous=False,
-                can_manage_chat=False,
                 can_delete_messages=False,
                 can_manage_video_chats=False,
                 can_restrict_members=False,
@@ -313,6 +362,27 @@ async def _remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
                 can_manage_topics=False,
             )
             msg += "✅ TG 管理员身份已撤销\n"
+        except BadRequest:
+            # 某些 TG 版本需要显式传 can_manage_chat=False
+            try:
+                await context.bot.promote_chat_member(
+                    chat_id, target.id,
+                    is_anonymous=False,
+                    can_manage_chat=False,
+                    can_delete_messages=False,
+                    can_manage_video_chats=False,
+                    can_restrict_members=False,
+                    can_promote_members=False,
+                    can_change_info=False,
+                    can_invite_users=False,
+                    can_post_messages=False,
+                    can_edit_messages=False,
+                    can_pin_messages=False,
+                    can_manage_topics=False,
+                )
+                msg += "✅ TG 管理员身份已撤销\n"
+            except Exception as e:
+                msg += f"⚠️ TG 管理员身份撤销失败：{e}\n"
         except Exception as e:
             msg += f"⚠️ TG 管理员身份撤销失败：{e}\n"
 
@@ -422,7 +492,7 @@ async def del_perm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("admin")
 async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """查看权限：/perms @user"""
+    """查看权限：/perms @user（分别显示 TG 权限和 Bot 权限）"""
     target = await _get_target(update, context)
     if not target:
         return
@@ -430,29 +500,46 @@ async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     display = target.username or target.first_name
 
-    # 检查是否是 TG 原生管理员
     member = await update.effective_chat.get_member(target.id)
-    if member.status in ("administrator", "creator"):
-        role = "群主" if member.status == "creator" else "TG管理员"
-        await update.effective_message.reply_text(
-            f"👤 {display} 是 {role}，拥有全部权限"
-        )
+
+    msg = f"👤 {display} 的权限：\n"
+
+    if member.status == "creator":
+        msg += "\n🔹 身份：群主\n  拥有全部权限（TG + Bot）"
+        await update.effective_message.reply_text(msg)
         return
 
+    if member.status == "administrator":
+        # 读取实际 TG 权限
+        tg_perms = await _get_actual_tg_perms(update.effective_chat, target.id)
+        msg += "\n🔹 身份：TG 管理员\n"
+        if tg_perms:
+            msg += "  TG 权限：" + "、".join(
+                TG_PERM_MAP[p][1] for p in sorted(tg_perms) if p in TG_PERM_MAP
+            ) + "\n"
+        else:
+            msg += "  TG 权限：无（仅管理员头衔）\n"
+
+        # Bot 权限：TG 管理员默认拥有全部 Bot 权限
+        msg += "  Bot 权限：全部（TG 管理员自动拥有）"
+        await update.effective_message.reply_text(msg)
+        return
+
+    # 普通用户 → 检查 Bot 自定义管理员权限
     if not db.is_custom_admin(chat_id, target.id):
         await update.effective_message.reply_text(f"❌ {display} 不是管理员")
         return
 
     perms = db.get_admin_permissions(chat_id, target.id)
+    msg += "\n🔹 身份：Bot 管理员\n"
     if perms == set(ALL_PERMISSIONS):
-        await update.effective_message.reply_text(f"👤 {display} 的权限：全部")
+        msg += "  Bot 权限：全部"
     else:
-        msg = f"👤 {display} 的权限：\n"
         for p in ALL_PERMISSIONS:
             mark = "✅" if p in perms else "❌"
             label = PERM_LABELS.get(p, p)
             msg += f"  {mark} {label}（{p}）\n"
-        await update.effective_message.reply_text(msg)
+    await update.effective_message.reply_text(msg)
 
 
 @admin_required
@@ -474,8 +561,35 @@ async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
         tg_admin_ids.add(admin.user.id)
         name = admin.user.username or admin.user.first_name or f"用户{admin.user.id}"
-        role = "群主" if admin.status == "creator" else "管理员"
-        msg += f"  • {name}（{role}，全部权限）\n"
+
+        if admin.status == "creator":
+            msg += f"  • {name}（群主）\n"
+        else:
+            # 读取实际 TG 权限
+            tg_perms = set()
+            perm_attr_map = {
+                "delete": "can_delete_messages",
+                "restrict": "can_restrict_members",
+                "invite": "can_invite_users",
+                "pin": "can_pin_messages",
+                "video": "can_manage_video_chats",
+                "promote": "can_promote_members",
+                "info": "can_change_info",
+                "topics": "can_manage_topics",
+            }
+            for key, attr in perm_attr_map.items():
+                if getattr(admin, attr, False):
+                    tg_perms.add(key)
+
+            if tg_perms == set(TG_ALL_PERMS):
+                perm_text = "全部权限"
+            elif tg_perms:
+                perm_text = "、".join(
+                    TG_PERM_MAP[p][1] for p in sorted(tg_perms) if p in TG_PERM_MAP
+                )
+            else:
+                perm_text = "无权限（仅头衔）"
+            msg += f"  • {name}（{perm_text}）\n"
 
     # Bot 管理员：排除已是 TG 管理员的，避免重复
     bot_only_admins = [a for a in custom if a["user_id"] not in tg_admin_ids]
@@ -527,6 +641,28 @@ def _parse_bot_perms(perm_args: list) -> set:
     if "all" in [p.lower() for p in perm_args]:
         valid_perms = set(ALL_PERMISSIONS)
     return valid_perms
+
+
+async def _get_actual_tg_perms(chat, user_id: int) -> set:
+    """从 Telegram 读取用户实际拥有的 TG 管理员权限"""
+    member = await chat.get_member(user_id)
+    actual = set()
+    if member.status == "administrator":
+        # TG ChatMember 对象的权限字段映射到我们的 key
+        perm_attr_map = {
+            "delete": "can_delete_messages",
+            "restrict": "can_restrict_members",
+            "invite": "can_invite_users",
+            "pin": "can_pin_messages",
+            "video": "can_manage_video_chats",
+            "promote": "can_promote_members",
+            "info": "can_change_info",
+            "topics": "can_manage_topics",
+        }
+        for key, attr in perm_attr_map.items():
+            if getattr(member, attr, False):
+                actual.add(key)
+    return actual
 
 
 async def _get_target_from_args(update: Update, context: ContextTypes.DEFAULT_TYPE, args: list):
