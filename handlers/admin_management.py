@@ -21,30 +21,48 @@ TG_ALL_PERMS = list(TG_PERM_MAP.keys())
 
 _SETADMIN_HELP = """📖 `/setadmin` 用法：
 
-`/setadmin bot <用户ID或回复> [权限...]`
+`/setadmin bot <用户ID或回复> <权限...>`
   设置 Bot 命令权限（不影响 TG 群组管理员）
-  不指定权限则默认全部权限
 
-`/setadmin tg <用户ID或回复> [权限...]`
-  提升为 TG 群组管理员
-  不指定权限则默认全部 TG 管理权限
+`/setadmin tg <用户ID或回复> <权限...>`
+  设置 TG 群组管理员权限
 
 `/setadmin off <用户ID或回复>`
   彻底移除管理员（同时撤销 TG 和 Bot 权限）
 
 ━━━ Bot 可用权限 ━━━
-  kick, ban, mute, warn, delete, pin,
-  invite, admin, config, blacklist,
-  filter, logs, announce, note
+  all — 全部权限
+  kick（踢出用户）
+  ban（封禁/解封）
+  mute（禁言/解禁）
+  warn（警告）
+  delete（删除消息）
+  pin（置顶/取消置顶）
+  invite（管理邀请链接）
+  admin（管理其他管理员）
+  config（修改群组配置）
+  blacklist（黑名单管理）
+  filter（敏感词管理）
+  logs（查看操作日志）
+  announce（发布群公告）
+  note（用户备注/标签）
 
 ━━━ TG 可用权限 ━━━
-  manage, delete, restrict, invite, pin,
-  video, promote, info, topics
+  all — 全部权限
+  manage（管理群组）
+  delete（删除消息）
+  restrict（限制成员）
+  invite（邀请用户）
+  pin（置顶消息）
+  video（管理视频聊天）
+  promote（提升管理员）
+  info（修改群信息）
+  topics（管理话题）
 
 ━━━ 示例 ━━━
-  /setadmin bot 123456 — 全部 Bot 权限
+  /setadmin bot 123456 all — 全部 Bot 权限
   /setadmin bot 123456 kick warn — 只有踢出和警告
-  /setadmin tg 123456 — 全部 TG 管理权限
+  /setadmin tg 123456 all — 全部 TG 管理权限
   /setadmin tg 123456 delete pin — 只能删消息和置顶
   /setadmin off 123456 — 移除所有管理员身份"""
 
@@ -80,6 +98,20 @@ async def _set_bot_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
     if not target:
         return
 
+    # 检查是否指定了权限
+    perm_args = args[1:] if args else []
+    if not perm_args:
+        await update.effective_message.reply_text(
+            "❌ 请指定 Bot 权限\n\n"
+            "用法：/setadmin bot <用户ID或回复> <权限...>\n"
+            "输入 all 获取全部权限，或指定具体权限\n"
+            "可用权限：all, kick, ban, mute, warn, delete, pin, invite, admin, config, blacklist, filter, logs, announce, note\n\n"
+            "示例：\n"
+            "  /setadmin bot 123456 all — 全部权限\n"
+            "  /setadmin bot 123456 kick warn — 只有踢出和警告"
+        )
+        return
+
     chat_id = update.effective_chat.id
     display = target.username or target.first_name
 
@@ -111,17 +143,37 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         await update.effective_message.reply_text("❌ 该用户是群主，无需设置")
         return
 
-    # 解析 TG 权限
+    # 检查是否指定了权限
     perm_args = args[1:] if args else []
+    if not perm_args:
+        await update.effective_message.reply_text(
+            "❌ 请指定 TG 权限\n\n"
+            "用法：/setadmin tg <用户ID或回复> <权限...>\n"
+            "输入 all 获取全部权限，或指定具体权限\n"
+            "可用权限：all, manage, delete, restrict, invite, pin, video, promote, info, topics\n\n"
+            "示例：\n"
+            "  /setadmin tg 123456 all — 全部权限\n"
+            "  /setadmin tg 123456 delete pin — 只能删消息和置顶"
+        )
+        return
+
+    # 解析 TG 权限
     valid_tg = set()
     for p in perm_args:
         p = p.lower().strip(",")
         if p in TG_PERM_MAP:
             valid_tg.add(p)
 
-    # 不指定权限或指定 all → 全部权限
-    if not valid_tg or "all" in [p.lower() for p in perm_args]:
+    # 指定 all → 全部权限
+    if "all" in [p.lower() for p in perm_args]:
         valid_tg = set(TG_ALL_PERMS)
+
+    if not valid_tg:
+        await update.effective_message.reply_text(
+            "❌ 没有有效的 TG 权限\n"
+            f"可用权限：all, {', '.join(TG_ALL_PERMS)}"
+        )
+        return
 
     # 构建 promote 参数
     promote_kwargs = {}

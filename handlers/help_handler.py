@@ -110,9 +110,9 @@ _FULL_HELP = """📖 **群组管理 Bot 命令帮助**
   /setadmin off <用户ID或回复> — 彻底移除管理员
   Bot 权限：kick, ban, mute, warn, delete, pin, invite, admin, config, blacklist, filter, logs, announce, note
   TG 权限：manage, delete, restrict, invite, pin, video, promote, info, topics
-  例：/setadmin bot 123456 — 全部 Bot 权限
+  例：/setadmin bot 123456 all — 全部 Bot 权限
   例：/setadmin bot 123456 kick warn — 只有踢出和警告
-  例：/setadmin tg 123456 — 全部 TG 管理权限
+  例：/setadmin tg 123456 all — 全部 TG 管理权限
   例：/setadmin tg 123456 delete pin — 只能删消息和置顶
   例：/setadmin off 123456 — 移除所有管理员身份
 /admins — 查看管理员列表
