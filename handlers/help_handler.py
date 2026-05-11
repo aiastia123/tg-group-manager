@@ -142,8 +142,26 @@ _FULL_HELP = """📖 **群组管理 Bot 命令帮助**
 /announce <内容> — 发布群公告
 
 ━━━ ⚙️ 配置与信息 ━━━
-/settings — 查看群组设置
+/settings — 查看群组当前配置
 /setconfig <配置项> <值> — 修改配置
+  可用配置项：
+  warn_limit <数字> — 警告上限（默认3，达到自动踢）
+  new_user_mute_minutes <数字> — 新用户静默期分钟（默认5，0关闭）
+  flood_messages <数字> — 洪水检测消息数（默认5）
+  flood_seconds <数字> — 洪水检测时间窗秒数（默认5）
+  link_filter <true/false> — 链接过滤（默认false）
+  media_filter <true/false> — 媒体过滤（默认false）
+  forward_filter <true/false> — 转发过滤（默认false）
+  welcome_enabled <true/false> — 欢迎消息（默认true）
+  welcome_text <文本> — 欢迎消息模板（{user} {chat}）
+  goodbye_enabled <true/false> — 告别消息（默认false）
+  goodbye_text <文本> — 告别消息模板
+  captcha_enabled <true/false> — 入群验证（默认true）
+  captcha_timeout <数字> — 验证超时秒数（默认120）
+  auto_delete_seconds <数字> — 自动删除消息秒数（默认0关闭）
+  例：/setconfig link_filter true
+  例：/setconfig warn_limit 5
+  例：/setconfig welcome_text 欢迎 {user} 加入！
 /setrules <规则> — 设置群规
 /rules — 查看群规
 /info <用户ID或回复> — 查看用户信息
