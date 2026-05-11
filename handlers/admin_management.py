@@ -233,8 +233,8 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         )
         return
 
-    # 构建 promote 参数：每个权限独立设置，can_manage_chat 也是普通权限
-    has_manage = "manage" in valid_tg
+    # 构建 promote 参数：can_manage_chat 是 TG 管理员基础权限，必须始终为 True
+    # 否则 Telegram API 可能隐式启用关联权限（如 pin 随 delete 自动开启）
     has_delete = "delete" in valid_tg
     has_restrict = "restrict" in valid_tg
     has_invite = "invite" in valid_tg
@@ -248,7 +248,7 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         await context.bot.promote_chat_member(
             chat_id, target.id,
             is_anonymous=False,
-            can_manage_chat=has_manage,
+            can_manage_chat=True,
             can_post_messages=False,
             can_edit_messages=False,
             can_delete_messages=has_delete,
