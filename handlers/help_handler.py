@@ -104,17 +104,17 @@ _FULL_HELP = """📖 **群组管理 Bot 命令帮助**
 /whoinvited <用户ID或回复> — 查看邀请来源
 
 ━━━ 🛡️ 管理员管理 ━━━
-/setadmin <用户ID> [权限...] — 设为 Bot 管理员
-  设置 Bot 命令使用权限（不影响 TG 群组管理员身份）
-  不指定权限则默认全部权限
-  例：/setadmin 123456 — 全部 Bot 权限
-  例：/setadmin 123456 kick ban warn — 只有踢出、封禁、警告权限
-/promote <用户ID> — 提升为 TG 群组管理员
-  让用户成为 Telegram 原生管理员（拥有全部 TG 管理权限）
-/demote <用户ID> — 降级 TG 群组管理员
-  仅撤销 TG 原生管理员身份（不影响 Bot 管理员权限）
-/removeadmin <用户ID> — 彻底移除管理员
-  同时撤销 TG 管理员身份和 Bot 管理员权限
+/setadmin — 设置管理员（输入查看详细帮助）
+  /setadmin bot <用户ID或回复> [权限...] — 设置 Bot 命令权限
+  /setadmin tg <用户ID或回复> [权限...] — 设置 TG 群组管理员
+  /setadmin off <用户ID或回复> — 彻底移除管理员
+  Bot 权限：kick, ban, mute, warn, delete, pin, invite, admin, config, blacklist, filter, logs, announce, note
+  TG 权限：manage, delete, restrict, invite, pin, video, promote, info, topics
+  例：/setadmin bot 123456 — 全部 Bot 权限
+  例：/setadmin bot 123456 kick warn — 只有踢出和警告
+  例：/setadmin tg 123456 — 全部 TG 管理权限
+  例：/setadmin tg 123456 delete pin — 只能删消息和置顶
+  例：/setadmin off 123456 — 移除所有管理员身份
 /admins — 查看管理员列表
 
 ━━━ 🔑 权限管理 ━━━

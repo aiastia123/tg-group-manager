@@ -63,8 +63,7 @@ async def post_init(application):
         BotCommand("settings", "群组设置"),
         BotCommand("rules", "查看群规"),
         BotCommand("info", "用户信息"),
-        BotCommand("promote", "提升为TG管理员"),
-        BotCommand("demote", "降级TG管理员"),
+        BotCommand("setadmin", "设置管理员"),
         BotCommand("admins", "管理员列表"),
         BotCommand("blacklist", "黑名单管理"),
         BotCommand("blacklists", "查看黑名单"),
@@ -119,9 +118,6 @@ def main():
 
     # 管理员
     add_cmd("setadmin", admin_management.set_admin)
-    add_cmd("removeadmin", admin_management.remove_admin)
-    add_cmd("promote", admin_management.promote_admin)
-    add_cmd("demote", admin_management.demote_admin)
     add_cmd("admins", admin_management.list_admins)
     add_cmd("addperm", admin_management.add_perm)
     add_cmd("delperm", admin_management.del_perm)
