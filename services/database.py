@@ -162,6 +162,16 @@ def init_db():
                 created_at REAL NOT NULL,
                 PRIMARY KEY (chat_id, word)
             );
+
+            CREATE TABLE IF NOT EXISTS invite_permissions (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                max_invites INTEGER DEFAULT 1,
+                used_count INTEGER DEFAULT 0,
+                created_by INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (chat_id, user_id)
+            );
         """)
 
         # 数据库迁移：为已有 captcha 表添加 token 列
@@ -656,6 +666,81 @@ def admin_has_permission(chat_id: int, user_id: int, perm: str) -> bool:
     """检查自定义管理员是否拥有某个权限"""
     perms = get_admin_permissions(chat_id, user_id)
     return perm in perms
+
+
+# ─── 普通用户邀请权限 ───
+
+def set_invite_permission(chat_id: int, user_id: int, max_invites: int, created_by: int):
+    """设置用户的邀请权限（user_id=0 表示 all）"""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO invite_permissions (chat_id, user_id, max_invites, used_count, created_by, created_at) VALUES (?, ?, ?, 0, ?, ?)",
+            (chat_id, user_id, max_invites, created_by, time.time()),
+        )
+
+
+def remove_invite_permission(chat_id: int, user_id: int) -> bool:
+    """移除用户的邀请权限"""
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM invite_permissions WHERE chat_id=? AND user_id=?", (chat_id, user_id)
+        )
+    return cur.rowcount > 0
+
+
+def get_invite_permission(chat_id: int, user_id: int) -> dict | None:
+    """获取用户的邀请权限（优先返回特定用户权限，其次返回 all 权限）"""
+    with get_db() as conn:
+        # 先查找特定用户的权限
+        row = conn.execute(
+            "SELECT * FROM invite_permissions WHERE chat_id=? AND user_id=?",
+            (chat_id, user_id),
+        ).fetchone()
+        if row:
+            return dict(row)
+        # 再查找 all 权限（user_id=0）
+        row = conn.execute(
+            "SELECT * FROM invite_permissions WHERE chat_id=? AND user_id=0",
+            (chat_id,),
+        ).fetchone()
+        if row:
+            return dict(row)
+    return None
+
+
+def increment_invite_used(chat_id: int, user_id: int):
+    """增加用户已使用的邀请次数"""
+    with get_db() as conn:
+        # 先尝试更新特定用户记录
+        cur = conn.execute(
+            "UPDATE invite_permissions SET used_count = used_count + 1 WHERE chat_id=? AND user_id=?",
+            (chat_id, user_id),
+        )
+        if cur.rowcount == 0:
+            # 如果没有特定用户记录，更新 all 记录（user_id=0）
+            conn.execute(
+                "UPDATE invite_permissions SET used_count = used_count + 1 WHERE chat_id=? AND user_id=0",
+                (chat_id,),
+            )
+
+
+def get_all_invite_permissions(chat_id: int) -> list:
+    """获取群组所有邀请权限配置"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM invite_permissions WHERE chat_id=? ORDER BY user_id",
+            (chat_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remove_all_invite_permissions(chat_id: int) -> int:
+    """移除群组的所有邀请权限配置（包括all）"""
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM invite_permissions WHERE chat_id=?", (chat_id,)
+        )
+    return cur.rowcount
 
 
 # ─── 待领取邀请链接 ───

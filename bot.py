@@ -54,6 +54,7 @@ async def post_init(application):
         BotCommand("warns", "查看警告"),
         BotCommand("resetwarns", "清除警告"),
         BotCommand("invite", "创建邀请链接"),
+        BotCommand("set_invite", "设置邀请权限"),
         BotCommand("invites", "邀请链接列表"),
         BotCommand("revoke", "撤销邀请链接"),
         BotCommand("del", "删除消息"),
@@ -109,6 +110,7 @@ def main():
 
     # 邀请链接
     add_cmd("invite", invites.create_invite)
+    add_cmd("set_invite", invites.set_invite_perm)
     add_cmd("invites", invites.list_invites)
     add_cmd("revoke", invites.revoke_invite)
     add_cmd("whoinvited", invites.invite_tracking)
