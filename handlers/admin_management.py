@@ -198,19 +198,31 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
 
     # 构建 promote 参数：选中的设 True，未选的设 False
     # can_manage_chat 必须为 True 才能保持管理员身份（否则会被降级为普通用户）
-    promote_kwargs = {
-        "is_anonymous": False,
-        "can_manage_chat": True,  # 始终为 True，否则不是管理员
-        "can_post_messages": False,  # 频道专用
-        "can_edit_messages": False,  # 频道专用
-    }
-    for perm_key, (api_key, _) in TG_PERM_MAP.items():
-        if api_key == "can_manage_chat":
-            continue  # 已设为 True
-        promote_kwargs[api_key] = perm_key in valid_tg
+    has_delete = "delete" in valid_tg
+    has_restrict = "restrict" in valid_tg
+    has_invite = "invite" in valid_tg
+    has_pin = "pin" in valid_tg
+    has_video = "video" in valid_tg
+    has_promote = "promote" in valid_tg
+    has_info = "info" in valid_tg
+    has_topics = "topics" in valid_tg
 
     try:
-        await context.bot.promote_chat_member(chat_id, target.id, **promote_kwargs)
+        await context.bot.promote_chat_member(
+            chat_id, target.id,
+            is_anonymous=False,
+            can_manage_chat=True,
+            can_post_messages=False,
+            can_edit_messages=False,
+            can_delete_messages=has_delete,
+            can_manage_video_chats=has_video,
+            can_restrict_members=has_restrict,
+            can_promote_members=has_promote,
+            can_change_info=has_info,
+            can_invite_users=has_invite,
+            can_pin_messages=has_pin,
+            can_manage_topics=has_topics,
+        )
         if is_none:
             perm_text = "无（仅管理员头衔）"
         else:
