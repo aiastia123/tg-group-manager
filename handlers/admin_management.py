@@ -184,6 +184,86 @@ async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @require_perm("admin")
+async def promote_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """提升为 TG 管理员：/promote @user
+    提升用户为 Telegram 群组原生管理员（拥有全部 TG 管理权限）
+    """
+    target = await _get_target(update, context)
+    if not target:
+        return
+
+    chat_id = update.effective_chat.id
+    display = target.username or target.first_name
+
+    # 检查目标当前身份
+    target_member = await update.effective_chat.get_member(target.id)
+    if target_member.status == "creator":
+        await update.effective_message.reply_text("❌ 该用户是群主")
+        return
+    if target_member.status == "administrator":
+        await update.effective_message.reply_text(f"ℹ️ {display} 已经是 TG 管理员")
+        return
+
+    try:
+        await context.bot.promote_chat_member(
+            chat_id, target.id,
+            can_manage_chat=True,
+            can_delete_messages=True,
+            can_restrict_members=True,
+            can_invite_users=True,
+            can_pin_messages=True,
+        )
+        db.add_log(chat_id, update.effective_user.id, "promote", target.id,
+                   f"提升 {display} 为 TG 管理员")
+        await update.effective_message.reply_text(f"✅ {display} 已提升为 TG 管理员")
+    except Exception as e:
+        await update.effective_message.reply_text(f"❌ 提升失败：{e}")
+
+
+@require_perm("admin")
+async def demote_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """降级 TG 管理员：/demote @user
+    仅撤销 TG 原生管理员身份，不影响 Bot 管理员权限
+    """
+    target = await _get_target(update, context)
+    if not target:
+        return
+
+    chat_id = update.effective_chat.id
+    display = target.username or target.first_name
+
+    target_member = await update.effective_chat.get_member(target.id)
+    if target_member.status == "creator":
+        await update.effective_message.reply_text("❌ 无法降级群主")
+        return
+    if target_member.status != "administrator":
+        await update.effective_message.reply_text(f"ℹ️ {display} 不是 TG 管理员")
+        return
+
+    try:
+        await context.bot.promote_chat_member(
+            chat_id, target.id,
+            is_anonymous=False,
+            can_manage_chat=False,
+            can_delete_messages=False,
+            can_manage_video_chats=False,
+            can_restrict_members=False,
+            can_promote_members=False,
+            can_change_info=False,
+            can_invite_users=False,
+            can_post_messages=False,
+            can_edit_messages=False,
+            can_pin_messages=False,
+            can_manage_topics=False,
+        )
+        db.add_log(chat_id, update.effective_user.id, "demote", target.id,
+                   f"降级 {display} 的 TG 管理员身份")
+        await update.effective_message.reply_text(f"✅ {display} 的 TG 管理员身份已撤销")
+    except Exception as e:
+        await update.effective_message.reply_text(f"❌ 降级失败：{e}")
+
+
+@require_perm("admin")
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """取消管理员：/removeadmin @user
     同时撤销 Bot 管理员权限和 TG 管理员身份
