@@ -19,15 +19,15 @@ TG_PERM_MAP = {
 }
 TG_ALL_PERMS = list(TG_PERM_MAP.keys())
 
-_SETADMIN_HELP = """📖 `/setadmin` 用法：
+_SETADMIN_HELP = """📖 /setadmin 用法：
 
-`/setadmin bot <用户ID或回复> <权限...>`
+/setadmin bot <用户ID或回复> <权限...>
   设置 Bot 命令权限（不影响 TG 群组管理员）
 
-`/setadmin tg <用户ID或回复> <权限...>`
+/setadmin tg <用户ID或回复> <权限...>
   设置 TG 群组管理员权限
 
-`/setadmin off <用户ID或回复>`
+/setadmin off <用户ID或回复>
   彻底移除管理员（同时撤销 TG 和 Bot 权限）
 
 ━━━ Bot 可用权限 ━━━
@@ -98,8 +98,8 @@ async def _set_bot_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
     if not target:
         return
 
-    # 检查是否指定了权限
-    perm_args = args[1:] if args else []
+    # 回复消息时 args 全是权限，非回复时第一个是 user_id 要跳过
+    perm_args = args if update.message.reply_to_message else (args[1:] if args else [])
     if not perm_args:
         await update.effective_message.reply_text(
             "❌ 请指定 Bot 权限\n\n"
@@ -115,7 +115,8 @@ async def _set_bot_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
     chat_id = update.effective_chat.id
     display = target.username or target.first_name
 
-    valid_perms = _parse_bot_perms(args)
+    # 传入已计算好的 perm_args
+    valid_perms = _parse_bot_perms(perm_args)
 
     db.add_custom_admin(chat_id, target.id, update.effective_user.id, permissions=valid_perms)
     db.add_log(chat_id, update.effective_user.id, "set_admin", target.id,
@@ -143,8 +144,8 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
         await update.effective_message.reply_text("❌ 该用户是群主，无需设置")
         return
 
-    # 检查是否指定了权限
-    perm_args = args[1:] if args else []
+    # 回复消息时 args 全是权限，非回复时第一个是 user_id 要跳过
+    perm_args = args if update.message.reply_to_message else (args[1:] if args else [])
     if not perm_args:
         await update.effective_message.reply_text(
             "❌ 请指定 TG 权限\n\n"
@@ -438,16 +439,16 @@ def _format_tg_perm(perm_key: str) -> str:
     return perm_key
 
 
-def _parse_bot_perms(args: list) -> set:
-    """从参数中解析 Bot 权限"""
-    perm_args = args[1:] if args else []
+def _parse_bot_perms(perm_args: list) -> set:
+    """从参数中解析 Bot 权限（接收纯权限列表）"""
     valid_perms = set()
     for p in perm_args:
         p = p.lower().strip(",")
         if p in ALL_PERMISSIONS:
             valid_perms.add(p)
 
-    if not valid_perms or "all" in [p.lower() for p in perm_args]:
+    # 指定 all → 全部权限
+    if "all" in [p.lower() for p in perm_args]:
         valid_perms = set(ALL_PERMISSIONS)
     return valid_perms
 

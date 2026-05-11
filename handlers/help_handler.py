@@ -76,7 +76,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-_FULL_HELP = """📖 **群组管理 Bot 命令帮助**
+_FULL_HELP = """📖 群组管理 Bot 命令帮助
 
 ━━━ 👤 用户管理 ━━━
 /kick <用户ID或回复> [原因] — 踢出用户
