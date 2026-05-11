@@ -32,6 +32,7 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
 
 ━━━ Bot 可用权限 ━━━
   all — 全部权限
+  none — 无权限（仅管理员头衔）
   kick（踢出用户）
   ban（封禁/解封）
   mute（禁言/解禁）
@@ -49,6 +50,7 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
 
 ━━━ TG 可用权限 ━━━
   all — 全部权限
+  none — 无权限（仅管理员头衔）
   manage（管理群组）
   delete（删除消息）
   restrict（限制成员）
@@ -64,6 +66,8 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
   /setadmin bot 123456 kick warn — 只有踢出和警告
   /setadmin tg 123456 all — 全部 TG 管理权限
   /setadmin tg 123456 delete pin — 只能删消息和置顶
+  /setadmin tg 123456 none — 无权限管理员（仅头衔）
+  /setadmin bot 123456 none — 无权限 Bot 管理员
   /setadmin off 123456 — 移除所有管理员身份"""
 
 
@@ -115,8 +119,21 @@ async def _set_bot_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, arg
     chat_id = update.effective_chat.id
     display = target.username or target.first_name
 
+    # 检查是否是 none（无权限管理员）
+    is_none = "none" in [p.lower() for p in perm_args]
+
     # 传入已计算好的 perm_args
     valid_perms = _parse_bot_perms(perm_args)
+
+    if not is_none and not valid_perms:
+        await update.effective_message.reply_text(
+            "❌ 没有有效的 Bot 权限\n"
+            f"可用权限：all, none, {', '.join(ALL_PERMISSIONS)}"
+        )
+        return
+
+    if is_none:
+        valid_perms = set()
 
     db.add_custom_admin(chat_id, target.id, update.effective_user.id, permissions=valid_perms)
     db.add_log(chat_id, update.effective_user.id, "set_admin", target.id,
@@ -160,21 +177,24 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
 
     # 解析 TG 权限
     valid_tg = set()
-    for p in perm_args:
-        p = p.lower().strip(",")
-        if p in TG_PERM_MAP:
-            valid_tg.add(p)
+    is_none = "none" in [p.lower() for p in perm_args]
 
-    # 指定 all → 全部权限
-    if "all" in [p.lower() for p in perm_args]:
-        valid_tg = set(TG_ALL_PERMS)
+    if not is_none:
+        for p in perm_args:
+            p = p.lower().strip(",")
+            if p in TG_PERM_MAP:
+                valid_tg.add(p)
 
-    if not valid_tg:
-        await update.effective_message.reply_text(
-            "❌ 没有有效的 TG 权限\n"
-            f"可用权限：all, {', '.join(TG_ALL_PERMS)}"
-        )
-        return
+        # 指定 all → 全部权限
+        if "all" in [p.lower() for p in perm_args]:
+            valid_tg = set(TG_ALL_PERMS)
+
+        if not valid_tg:
+            await update.effective_message.reply_text(
+                "❌ 没有有效的 TG 权限\n"
+                f"可用权限：all, none, {', '.join(TG_ALL_PERMS)}"
+            )
+            return
 
     # 构建 promote 参数：选中的设 True，未选的设 False
     promote_kwargs = {}
@@ -183,12 +203,15 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
 
     try:
         await context.bot.promote_chat_member(chat_id, target.id, **promote_kwargs)
-        perm_names = [_format_tg_perm(p) for p in sorted(valid_tg)]
+        if is_none:
+            perm_text = "无（仅管理员头衔）"
+        else:
+            perm_text = ', '.join(_format_tg_perm(p) for p in sorted(valid_tg))
         db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
-                   f"设置 {display} 为 TG 管理员，权限：{','.join(valid_tg)}")
+                   f"设置 {display} 为 TG 管理员，权限：{','.join(valid_tg) if valid_tg else 'none'}")
         await update.effective_message.reply_text(
             f"✅ {display} 已设为 TG 管理员\n"
-            f"TG 权限：{', '.join(perm_names)}"
+            f"TG 权限：{perm_text}"
         )
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 设置 TG 管理员失败：{e}")
