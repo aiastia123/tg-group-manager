@@ -50,7 +50,7 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
 
 ━━━ TG 可用权限 ━━━
   all — 全部权限
-  none — 无权限（仅管理员头衔）
+  none — 撤销管理员身份（TG 不支持无权限管理员）
   manage（管理群组）
   delete（删除消息）
   restrict（限制成员）
@@ -66,7 +66,7 @@ _SETADMIN_HELP = """📖 /setadmin 用法：
   /setadmin bot 123456 kick warn — 只有踢出和警告
   /setadmin tg 123456 all — 全部 TG 管理权限
   /setadmin tg 123456 delete pin — 只能删消息和置顶
-  /setadmin tg 123456 none — 无权限管理员（仅头衔）
+  /setadmin tg 123456 none — 撤销 TG 管理员身份
   /setadmin bot 123456 none — 无权限 Bot 管理员
   /setadmin off 123456 — 移除所有管理员身份"""
 
@@ -196,8 +196,45 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
             )
             return
 
-    # 构建 promote 参数：选中的设 True，未选的设 False
-    # can_manage_chat 必须为 True 才能保持管理员身份（否则会被降级为普通用户）
+    # none = 撤销管理员身份（Telegram 不支持完全无权限的管理员）
+    if is_none:
+        try:
+            await context.bot.promote_chat_member(
+                chat_id, target.id,
+                is_anonymous=False,
+                can_manage_chat=False,
+                can_post_messages=False,
+                can_edit_messages=False,
+                can_delete_messages=False,
+                can_manage_video_chats=False,
+                can_restrict_members=False,
+                can_promote_members=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
+                can_manage_topics=False,
+            )
+            db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
+                       f"撤销 {display} 的 TG 管理员身份（none）")
+            await update.effective_message.reply_text(
+                f"✅ {display} 的 TG 管理员身份已撤销\n"
+                f"ℹ️ Telegram 不支持无权限管理员，已自动降级为普通用户"
+            )
+        except Exception as e:
+            await update.effective_message.reply_text(f"❌ 操作失败：{e}")
+        return
+
+    # 检查是否至少有一个权限（Telegram 要求管理员至少有一个真实权限）
+    if not valid_tg:
+        await update.effective_message.reply_text(
+            "❌ 没有有效的 TG 权限\n"
+            "Telegram 要求管理员至少拥有一个真实权限\n"
+            f"可用权限：all, {', '.join(TG_ALL_PERMS)}"
+        )
+        return
+
+    # 构建 promote 参数：每个权限独立设置，can_manage_chat 也是普通权限
+    has_manage = "manage" in valid_tg
     has_delete = "delete" in valid_tg
     has_restrict = "restrict" in valid_tg
     has_invite = "invite" in valid_tg
@@ -208,27 +245,10 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
     has_topics = "topics" in valid_tg
 
     try:
-        # 第一步：先完全降级，清除所有旧权限
         await context.bot.promote_chat_member(
             chat_id, target.id,
             is_anonymous=False,
-            can_manage_chat=False,
-            can_post_messages=False,
-            can_edit_messages=False,
-            can_delete_messages=False,
-            can_manage_video_chats=False,
-            can_restrict_members=False,
-            can_promote_members=False,
-            can_change_info=False,
-            can_invite_users=False,
-            can_pin_messages=False,
-            can_manage_topics=False,
-        )
-        # 第二步：重新提升为管理员，只设置需要的权限
-        await context.bot.promote_chat_member(
-            chat_id, target.id,
-            is_anonymous=False,
-            can_manage_chat=True,
+            can_manage_chat=has_manage,
             can_post_messages=False,
             can_edit_messages=False,
             can_delete_messages=has_delete,
@@ -240,12 +260,9 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
             can_pin_messages=has_pin,
             can_manage_topics=has_topics,
         )
-        if is_none:
-            perm_text = "无（仅管理员头衔）"
-        else:
-            perm_text = ', '.join(_format_tg_perm(p) for p in sorted(valid_tg))
+        perm_text = ', '.join(_format_tg_perm(p) for p in sorted(valid_tg))
         db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
-                   f"设置 {display} 为 TG 管理员，权限：{','.join(valid_tg) if valid_tg else 'none'}")
+                   f"设置 {display} 为 TG 管理员，权限：{','.join(valid_tg)}")
         await update.effective_message.reply_text(
             f"✅ {display} 已设为 TG 管理员\n"
             f"TG 权限：{perm_text}"
