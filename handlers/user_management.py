@@ -8,11 +8,7 @@ from services import database as db
 
 @require_perm("kick")
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """踢出用户：/kick @user [原因]"""
-    if not context.args or len(context.args) < 1:
-        await update.effective_message.reply_text("用法：/kick @用户 [原因]")
-        return
-
+    """踢出用户：/kick @user [原因] 或回复消息"""
     try:
         target = await _resolve_user(update, context)
         if not target:
@@ -21,7 +17,11 @@ async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ 找不到该用户")
         return
 
-    reason = " ".join(context.args[1:]) if len(context.args) > 1 else ""
+    # 回复消息时，参数全部作为原因；否则跳过第一个参数（用户标识）
+    if update.message.reply_to_message:
+        reason = " ".join(context.args) if context.args else ""
+    else:
+        reason = " ".join(context.args[1:]) if context.args and len(context.args) > 1 else ""
     chat_id = update.effective_chat.id
 
     try:
@@ -44,11 +44,7 @@ async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("ban")
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """封禁用户：/ban @user [原因]"""
-    if not context.args:
-        await update.effective_message.reply_text("用法：/ban @用户 [原因]")
-        return
-
+    """封禁用户：/ban @user [原因] 或回复消息"""
     try:
         target = await _resolve_user(update, context)
         if not target:
@@ -57,7 +53,11 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ 找不到该用户")
         return
 
-    reason = " ".join(context.args[1:]) if len(context.args) > 1 else ""
+    # 回复消息时，参数全部作为原因；否则跳过第一个参数（用户标识）
+    if update.message.reply_to_message:
+        reason = " ".join(context.args) if context.args else ""
+    else:
+        reason = " ".join(context.args[1:]) if context.args and len(context.args) > 1 else ""
     chat_id = update.effective_chat.id
 
     try:
@@ -78,16 +78,26 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("ban")
 async def temp_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """临时封禁：/tempban @user <分钟> [原因]"""
-    if len(context.args) < 2:
-        await update.effective_message.reply_text("用法：/tempban @用户 <分钟数> [原因]")
-        return
-
-    try:
-        minutes = int(context.args[1])
-    except ValueError:
-        await update.effective_message.reply_text("❌ 分钟数必须是数字")
-        return
+    """临时封禁：/tempban @user <分钟> [原因] 或回复消息 <分钟> [原因]"""
+    # 回复消息时，第一个参数是分钟数；否则需要至少2个参数
+    if update.message.reply_to_message:
+        if not context.args:
+            await update.effective_message.reply_text("用法：回复消息 /tempban <分钟数> [原因]")
+            return
+        try:
+            minutes = int(context.args[0])
+        except ValueError:
+            await update.effective_message.reply_text("❌ 分钟数必须是数字")
+            return
+    else:
+        if len(context.args) < 2:
+            await update.effective_message.reply_text("用法：/tempban @用户 <分钟数> [原因]")
+            return
+        try:
+            minutes = int(context.args[1])
+        except ValueError:
+            await update.effective_message.reply_text("❌ 分钟数必须是数字")
+            return
 
     try:
         target = await _resolve_user(update, context)
@@ -97,7 +107,11 @@ async def temp_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("❌ 找不到该用户")
         return
 
-    reason = " ".join(context.args[2:]) if len(context.args) > 2 else ""
+    # 回复消息时，原因从第二个参数开始；否则从第三个参数开始
+    if update.message.reply_to_message:
+        reason = " ".join(context.args[1:]) if len(context.args) > 1 else ""
+    else:
+        reason = " ".join(context.args[2:]) if len(context.args) > 2 else ""
     chat_id = update.effective_chat.id
     until = int(time.time()) + minutes * 60
 
@@ -118,11 +132,7 @@ async def temp_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("ban")
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """解封用户：/unban @user"""
-    if not context.args:
-        await update.effective_message.reply_text("用法：/unban @用户")
-        return
-
+    """解封用户：/unban @user 或回复消息"""
     try:
         target = await _resolve_user(update, context)
         if not target:
@@ -145,11 +155,7 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("mute")
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """禁言用户：/mute @user [分钟]"""
-    if not context.args:
-        await update.effective_message.reply_text("用法：/mute @用户 [分钟数(默认60)]")
-        return
-
+    """禁言用户：/mute @user [分钟] 或回复消息"""
     try:
         target = await _resolve_user(update, context)
         if not target:
@@ -159,12 +165,21 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     minutes = 60
-    if len(context.args) > 1:
-        try:
-            minutes = int(context.args[1])
-        except ValueError:
-            await update.effective_message.reply_text("❌ 分钟数必须是数字")
-            return
+    # 回复消息时，第一个参数是分钟数；否则第二个参数是分钟数
+    if update.message.reply_to_message:
+        if context.args:
+            try:
+                minutes = int(context.args[0])
+            except ValueError:
+                await update.effective_message.reply_text("❌ 分钟数必须是数字")
+                return
+    else:
+        if len(context.args) > 1:
+            try:
+                minutes = int(context.args[1])
+            except ValueError:
+                await update.effective_message.reply_text("❌ 分钟数必须是数字")
+                return
 
     chat_id = update.effective_chat.id
     until = time.time() + minutes * 60
@@ -202,11 +217,7 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @require_perm("mute")
 async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """解除禁言：/unmute @user"""
-    if not context.args:
-        await update.effective_message.reply_text("用法：/unmute @用户")
-        return
-
+    """解除禁言：/unmute @user 或回复消息"""
     try:
         target = await _resolve_user(update, context)
         if not target:
