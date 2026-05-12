@@ -228,12 +228,8 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     try:
-        # 使用群默认权限来清除例外列表中的记录
-        chat_info = await context.bot.get_chat(chat_id)
-        await context.bot.restrict_chat_member(
-            chat_id, target.id,
-            permissions=chat_info.permissions,
-        )
+        # 直接从例外列表中移除用户，恢复为群默认权限
+        await context.bot.unban_chat_member(chat_id, target.id)
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 解除禁言失败：{e}")
         return
