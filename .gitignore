@@ -4,3 +4,4 @@ data/
 .env
 venv/
 handlers/captcha_welcome
+test.py

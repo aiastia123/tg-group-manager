@@ -269,52 +269,15 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
             can_manage_topics=has_topics,
         )
 
-        # 读取 TG 实际授予的权限（Telegram 可能自动关联授予额外权限）
+        # 读取实际权限确认设置成功
         actual_perms = await _get_actual_tg_perms(update.effective_chat, target.id)
-
-        # 检查是否有 Telegram 自动附加的权限，尝试二次调用取消
-        extra = actual_perms - valid_tg
-        if extra:
-            try:
-                await context.bot.promote_chat_member(
-                    chat_id, target.id,
-                    is_anonymous=False,
-                    can_manage_chat=True,
-                    can_post_messages=False,
-                    can_edit_messages=False,
-                    can_delete_messages=has_delete,
-                    can_manage_video_chats=has_video,
-                    can_restrict_members=has_restrict,
-                    can_promote_members=has_promote,
-                    can_change_info=has_info,
-                    can_invite_users=has_invite,
-                    can_pin_messages=has_pin,
-                    can_manage_topics=has_topics,
-                )
-                # 再次读取实际权限
-                actual_perms = await _get_actual_tg_perms(update.effective_chat, target.id)
-                extra = actual_perms - valid_tg
-            except Exception:
-                pass  # 二次调用失败也不影响
-
         perm_text = ', '.join(_format_tg_perm(p) for p in sorted(actual_perms))
 
-        # 检查二次调用后是否仍有自动附加的权限
-        warning = ""
-        if extra:
-            extra_text = ', '.join(_format_tg_perm(p) for p in sorted(extra))
-            warning = (
-                f"\n\n⚠️ 注意：Telegram 自动附加了以下权限（服务端行为，无法通过二次调用取消）：\n"
-                f"  {extra_text}\n"
-                f"💡 Telegram 会将「删除消息」和「置顶消息」视为关联权限，授予其中一个会自动启用另一个。"
-            )
-
         db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
-                   f"设置 {display} 为 TG 管理员，请求权限：{','.join(valid_tg)}，实际权限：{','.join(actual_perms)}")
+                   f"设置 {display} 为 TG 管理员，权限：{','.join(actual_perms)}")
         await update.effective_message.reply_text(
             f"✅ {display} 已设为 TG 管理员\n"
-            f"TG 实际权限：{perm_text}"
-            f"{warning}"
+            f"TG 权限：{perm_text}"
         )
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 设置 TG 管理员失败：{e}")
