@@ -10,7 +10,7 @@ from telegram.ext import (
     filters,
 )
 from config import BOT_TOKEN
-from services.database import init_db, cleanup_expired_captchas, cleanup_expired_mutes
+from services.database import init_db, cleanup_expired_captchas, cleanup_expired_mutes, cleanup_pending_messages
 from handlers import (
     user_management,
     warns,
@@ -171,6 +171,19 @@ def main():
         filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.StatusUpdate.ALL,
         msg_filters.filter_messages,
     ))
+
+    # ─── 定时清理任务（每小时清理已领取/过期的临时数据） ───
+    def _cleanup_job(context):
+        try:
+            cleanup_expired_captchas()
+            cleanup_expired_mutes()
+            cleanup_pending_messages()
+            logger.info("定时清理完成")
+        except Exception as e:
+            logger.error(f"定时清理失败：{e}")
+
+    app.job_queue.run_once(_cleanup_job, 10)       # 启动 10 秒后清理一次
+    app.job_queue.run_repeating(_cleanup_job, 3600)  # 之后每小时清理一次
 
     # ─── 启动 ───
     logger.info("Bot 启动中...")

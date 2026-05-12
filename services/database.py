@@ -172,6 +172,14 @@ def init_db():
                 created_at REAL NOT NULL,
                 PRIMARY KEY (chat_id, user_id)
             );
+
+            CREATE TABLE IF NOT EXISTS pending_messages (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                claimed INTEGER DEFAULT 0
+            );
         """)
 
         # 数据库迁移：为已有 captcha 表添加 token 列
@@ -803,3 +811,45 @@ def contains_sensitive_word(chat_id: int, text: str) -> str | None:
         if w.lower() in text_lower:
             return w
     return None
+
+
+# ─── 待领取的私聊消息（深链按钮模式） ───
+
+def save_pending_message(token: str, user_id: int, content: str):
+    """保存待私聊发送的消息"""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO pending_messages (token, user_id, content, created_at, claimed) VALUES (?, ?, ?, ?, 0)",
+            (token, user_id, content, time.time()),
+        )
+
+
+def get_pending_message(token: str) -> dict | None:
+    """获取待领取的私聊消息"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM pending_messages WHERE token=? AND claimed=0",
+            (token,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def claim_pending_message(token: str):
+    """标记消息为已领取"""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE pending_messages SET claimed=1 WHERE token=?", (token,)
+        )
+
+
+def cleanup_pending_messages(max_age: int = 3600):
+    """清理过期的待领取消息（默认1小时）
+    - 删除已领取的消息
+    - 删除超过 max_age 秒未领取的消息
+    """
+    cutoff = time.time() - max_age
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM pending_messages WHERE claimed=1 OR created_at < ?",
+            (cutoff,),
+        )

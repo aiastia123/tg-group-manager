@@ -4,6 +4,7 @@ import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.decorators import admin_required, require_perm, is_user_admin, check_permission
+from utils.private_reply import reply_private
 from services import database as db
 
 
@@ -162,7 +163,7 @@ async def list_invites(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if link["member_limit"]:
             msg += f"   使用次数：{link['usage_count']}/{link['member_limit']}\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, "📋 邀请链接列表已准备好，点击下方按钮私聊查看", "🔗 点击查看邀请链接")
 
 
 @require_perm("invite")
@@ -221,7 +222,7 @@ async def invite_tracking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if info["link"]:
         msg += f"邀请链接：{info['link']}\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, f"📋 {display} 的邀请信息已准备好，点击下方按钮私聊查看", "🔗 点击查看邀请信息")
 
 
 @admin_required

@@ -75,31 +75,39 @@ async def _is_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_
 
 
 async def is_user_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None) -> bool:
-    """检查用户是否是管理员（TG原生 或 bot自定义）"""
+    """检查用户是否是管理员
+    - 群主(creator)：自动拥有所有权限
+    - TG 管理员(administrator)：不具有 Bot 管理员权限，需由群主通过 /setadmin bot 授权
+    - Bot 自定义管理员：按数据库记录检查
+    """
     if not update.effective_chat:
         return False
     uid = user_id or update.effective_user.id
     member = await update.effective_chat.get_member(uid)
-    if member.status in ("administrator", "creator"):
+    # 只有群主自动拥有权限
+    if member.status == "creator":
         return True
+    # TG 管理员不自动拥有 Bot 管理员权限，需要通过 /setadmin bot 设置
     return is_custom_admin(update.effective_chat.id, uid)
 
 
 async def check_permission(update: Update, context: ContextTypes.DEFAULT_TYPE, perm: str, user_id: int = None) -> bool:
     """
     检查用户是否有某个权限。
-    TG 群主/管理员默认拥有全部权限，自定义管理员按分配的权限检查。
+    - 群主(creator)：默认拥有全部权限
+    - TG 管理员(administrator)：不自动拥有 Bot 权限，需通过 /setadmin bot 授权后按权限表检查
+    - Bot 自定义管理员：按分配的权限检查
     """
     if not update.effective_chat:
         return False
     uid = user_id or update.effective_user.id
 
-    # TG 群主/管理员 → 全部权限
+    # TG 群主 → 全部权限
     member = await update.effective_chat.get_member(uid)
-    if member.status in ("administrator", "creator"):
+    if member.status == "creator":
         return True
 
-    # 自定义管理员 → 按权限表检查
+    # Bot 自定义管理员 → 按权限表检查（包括被 /setadmin bot 授权的 TG 管理员）
     if is_custom_admin(update.effective_chat.id, uid):
         return admin_has_permission(update.effective_chat.id, uid, perm)
 

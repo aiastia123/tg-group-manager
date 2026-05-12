@@ -5,6 +5,26 @@ from telegram.ext import ContextTypes
 from services import database as db
 
 
+async def _handle_view_deep_link(update: Update, context: ContextTypes.DEFAULT_TYPE, token: str):
+    """处理 view_ 深链：发送待领取的私聊消息"""
+    pending = db.get_pending_message(token)
+
+    if not pending:
+        await update.effective_message.reply_text("❌ 消息不存在或已被查看")
+        return
+
+    # 安全校验：确保是消息本人
+    if pending["user_id"] != update.effective_user.id:
+        await update.effective_message.reply_text("❌ 此消息不是发给你的")
+        return
+
+    # 标记为已领取
+    db.claim_pending_message(token)
+
+    # 发送消息内容
+    await update.effective_message.reply_text(pending["content"])
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """显示帮助信息：/help"""
     # 私聊时发送完整帮助，群聊时提示私聊查看
@@ -33,6 +53,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from handlers.captcha_welcome import handle_verify_deep_link
         token = context.args[0][7:]
         await handle_verify_deep_link(update, context, token)
+        return
+
+    # 处理深链参数 — 私聊查看敏感信息
+    if context.args and context.args[0].startswith("view_"):
+        token = context.args[0][5:]
+        await _handle_view_deep_link(update, context, token)
         return
 
     # 处理深链参数 — 邀请链接

@@ -3,6 +3,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.decorators import admin_required, require_perm
+from utils.private_reply import reply_private
 from services import database as db
 
 
@@ -55,7 +56,7 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg += "\n修改：/setconfig <配置项> <值>\n例：/setconfig warn_limit 5"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, "⚙️ 群组配置已准备好，点击下方按钮私聊查看", "📋 点击查看配置")
 
 
 @require_perm("config")
@@ -131,7 +132,7 @@ async def user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if invite:
         msg += f"  邀请人ID：{invite.get('inviter_id', '未知')}\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, f"👤 {display} 的信息已准备好，点击下方按钮私聊查看", "📋 点击查看用户信息")
 
 
 # ─── 备注 ───
@@ -285,7 +286,7 @@ async def show_blacklist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reason = entry["reason"] or "无原因"
         msg += f"  {i}. {name} — {reason}\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, "📋 黑名单已准备好，点击下方按钮私聊查看", "🚫 点击查看黑名单")
 
 
 # ─── 操作日志 ───
@@ -313,7 +314,7 @@ async def show_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f" — {log['details']}"
         msg += "\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, "📋 操作日志已准备好，点击下方按钮私聊查看", "📜 点击查看日志")
 
 
 # ─── 敏感词 ───
@@ -351,7 +352,7 @@ async def list_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not words:
         await update.effective_message.reply_text("📭 敏感词列表为空")
         return
-    await update.effective_message.reply_text(f"📋 敏感词列表：\n{', '.join(words)}")
+    await reply_private(update, context, f"📋 敏感词列表：\n{', '.join(words)}", "📋 敏感词列表已准备好，点击下方按钮私聊查看", "🔤 点击查看敏感词")
 
 
 # ─── 举报 ───
@@ -400,7 +401,7 @@ async def show_reports(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     msg += "处理：/resolve <举报ID> [done/dismiss]"
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, "📋 举报列表已准备好，点击下方按钮私聊查看", "📢 点击查看举报")
 
 
 @require_perm("logs")

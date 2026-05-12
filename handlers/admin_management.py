@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 from utils.decorators import admin_required, require_perm, PERM_LABELS
+from utils.private_reply import reply_private
 from services import database as db
 from services.database import ALL_PERMISSIONS
 
@@ -505,7 +506,7 @@ async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if member.status == "creator":
         msg += "\n🔹 身份：群主\n  拥有全部权限（TG + Bot）"
-        await update.effective_message.reply_text(msg)
+        await reply_private(update, context, msg, f"👤 {display} 的权限信息已准备好", "🔑 点击查看权限")
         return
 
     if member.status == "administrator":
@@ -519,9 +520,13 @@ async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             msg += "  TG 权限：无（仅管理员头衔）\n"
 
-        # Bot 权限：TG 管理员默认拥有全部 Bot 权限
-        msg += "  Bot 权限：全部（TG 管理员自动拥有）"
-        await update.effective_message.reply_text(msg)
+        # Bot 权限：检查是否有 Bot 管理员记录
+        if db.is_custom_admin(chat_id, target.id):
+            bot_perms = db.get_admin_permissions(chat_id, target.id)
+            msg += f"  Bot 权限：{_format_perms(bot_perms)}"
+        else:
+            msg += "  Bot 权限：无（未通过 /setadmin bot 授权）"
+        await reply_private(update, context, msg, f"👤 {display} 的权限信息已准备好", "🔑 点击查看权限")
         return
 
     # 普通用户 → 检查 Bot 自定义管理员权限
@@ -538,7 +543,7 @@ async def show_perms(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mark = "✅" if p in perms else "❌"
             label = PERM_LABELS.get(p, p)
             msg += f"  {mark} {label}（{p}）\n"
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, f"👤 {display} 的权限信息已准备好", "🔑 点击查看权限")
 
 
 @admin_required
@@ -607,7 +612,7 @@ async def list_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 perm_text = ", ".join(PERM_LABELS.get(p, p) for p in sorted(perms))
             msg += f"  • {name}（{perm_text}）\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, "📋 管理员列表已准备好，点击下方按钮私聊查看", "🛡️ 点击查看管理员")
 
 
 # ─── 辅助函数 ───

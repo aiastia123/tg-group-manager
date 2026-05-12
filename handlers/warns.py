@@ -2,6 +2,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from utils.decorators import admin_required, require_perm
+from utils.private_reply import reply_private
 from services import database as db
 
 
@@ -63,7 +64,7 @@ async def warns_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reason = w["reason"] or "无原因"
         msg += f"  {i}. {reason}\n"
 
-    await update.effective_message.reply_text(msg)
+    await reply_private(update, context, msg, f"📋 {display} 的警告记录已准备好，点击下方按钮私聊查看", "⚠️ 点击查看警告")
 
 
 @require_perm("warn")
