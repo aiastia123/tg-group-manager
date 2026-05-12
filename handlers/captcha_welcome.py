@@ -148,8 +148,12 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         db.remove_mute(captcha["chat_id"], captcha["user_id"])
 
         try:
-            # 直接从例外列表中移除用户，恢复为群默认权限
-            await context.bot.unban_chat_member(captcha["chat_id"], captcha["user_id"])
+            # 使用群默认权限恢复，清除例外记录
+            chat_info = await context.bot.get_chat(captcha["chat_id"])
+            await context.bot.restrict_chat_member(
+                captcha["chat_id"], captcha["user_id"],
+                permissions=chat_info.permissions,
+            )
         except Exception as e:
             logger.warning(f"解除禁言失败: {e}")
 
@@ -237,9 +241,13 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
         except Exception:
             pass
 
-        # 直接从例外列表中移除用户，清除权限例外记录
+        # 使用群默认权限恢复，清除例外记录
         try:
-            await context.bot.unban_chat_member(chat_id, user_id)
+            chat_info = await context.bot.get_chat(chat_id)
+            await context.bot.restrict_chat_member(
+                chat_id, user_id,
+                permissions=chat_info.permissions,
+            )
         except Exception:
             pass
 
