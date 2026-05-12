@@ -264,7 +264,8 @@ async def _resolve_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # user_id
         try:
             uid = int(arg)
-            return await context.bot.get_chat_member(update.effective_chat.id, uid)
+            member = await context.bot.get_chat_member(update.effective_chat.id, uid)
+            return member.user  # 统一返回 User 对象
         except (ValueError, Exception):
             pass
 
