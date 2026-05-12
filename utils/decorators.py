@@ -18,51 +18,64 @@ async def _delayed_delete(bot, chat_id, msg_id, delay):
         pass
 
 
-def auto_delete_in_group(func):
-    """装饰器：群聊中自动删除用户的命令消息和 bot 的回复"""
-    @wraps(func)
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        # 私聊不处理
-        if not update.effective_chat or update.effective_chat.type == "private":
-            return await func(update, context, *args, **kwargs)
+def auto_delete_in_group(func=None, *, delete_bot_replies=True):
+    """装饰器：群聊中自动删除用户的命令消息和 bot 的回复
 
-        chat_id = update.effective_chat.id
+    Args:
+        delete_bot_replies: 是否自动删除 bot 的回复消息（默认 True）。
+            设为 False 时，只删除用户的命令消息，保留 bot 的回复。
+            适用于 /warn、/mute、/rules 等需要让用户看到回复的命令。
+    """
+    def decorator(f):
+        @wraps(f)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+            # 私聊不处理
+            if not update.effective_chat or update.effective_chat.type == "private":
+                return await f(update, context, *args, **kwargs)
 
-        # 收集 bot 回复消息 ID 的容器
-        bot_message_ids = []
-        original_send_message = context.bot.send_message
+            chat_id = update.effective_chat.id
 
-        async def tracked_send_message(*send_args, **send_kwargs):
-            msg = await original_send_message(*send_args, **send_kwargs)
-            if msg.chat.id == chat_id:
-                bot_message_ids.append(msg.message_id)
-            return msg
+            # 收集 bot 回复消息 ID 的容器
+            bot_message_ids = []
+            original_send_message = context.bot.send_message
 
-        # 用 object.__setattr__ 绕过 frozen 限制
-        orig = context.bot.send_message
-        try:
-            object.__setattr__(context.bot, 'send_message', tracked_send_message)
-        except (AttributeError, TypeError):
-            # 如果仍无法设置，则不追踪 bot 回复
-            orig = None
+            async def tracked_send_message(*send_args, **send_kwargs):
+                msg = await original_send_message(*send_args, **send_kwargs)
+                if msg.chat.id == chat_id:
+                    bot_message_ids.append(msg.message_id)
+                return msg
 
-        try:
-            await func(update, context, *args, **kwargs)
-        finally:
-            if orig is not None:
+            # 用 object.__setattr__ 绕过 frozen 限制
+            orig = context.bot.send_message
+            if delete_bot_replies:
                 try:
-                    object.__setattr__(context.bot, 'send_message', orig)
+                    object.__setattr__(context.bot, 'send_message', tracked_send_message)
                 except (AttributeError, TypeError):
-                    pass
+                    orig = None
 
-        # 安排删除 bot 回复消息
-        for msg_id in bot_message_ids:
-            asyncio.create_task(_delayed_delete(context.bot, chat_id, msg_id, AUTO_DELETE_DELAY))
+            try:
+                await f(update, context, *args, **kwargs)
+            finally:
+                if delete_bot_replies and orig is not None:
+                    try:
+                        object.__setattr__(context.bot, 'send_message', orig)
+                    except (AttributeError, TypeError):
+                        pass
 
-        # 安排删除用户的命令消息
-        asyncio.create_task(_delayed_delete(context.bot, chat_id, update.message.message_id, AUTO_DELETE_DELAY))
+            # 安排删除 bot 回复消息（仅在 delete_bot_replies=True 时）
+            if delete_bot_replies:
+                for msg_id in bot_message_ids:
+                    asyncio.create_task(_delayed_delete(context.bot, chat_id, msg_id, AUTO_DELETE_DELAY))
 
-    return wrapper
+            # 安排删除用户的命令消息
+            asyncio.create_task(_delayed_delete(context.bot, chat_id, update.message.message_id, AUTO_DELETE_DELAY))
+
+        return wrapper
+
+    # 支持无参调用 @auto_delete_in_group 和带参调用 @auto_delete_in_group(delete_bot_replies=False)
+    if func is not None:
+        return decorator(func)
+    return decorator
 
 
 async def _is_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int = None) -> bool:

@@ -86,9 +86,15 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).concurrent_updates(True).build()
 
     # ─── 辅助函数：注册带自动删除的命令 ───
-    def add_cmd(name, handler):
-        """注册命令，自动包装 auto_delete_in_group 装饰器"""
-        app.add_handler(CommandHandler(name, auto_delete_in_group(handler)))
+    def add_cmd(name, handler, keep_bot_reply=False):
+        """注册命令，自动包装 auto_delete_in_group 装饰器
+
+        Args:
+            keep_bot_reply: 为 True 时只删除用户命令消息，保留 bot 的回复。
+                适用于 /warn、/mute、/rules 等需要让用户看到回复的命令。
+        """
+        wrapped = auto_delete_in_group(handler, delete_bot_replies=not keep_bot_reply)
+        app.add_handler(CommandHandler(name, wrapped))
 
     # ─── 注册命令 ───
 
@@ -96,16 +102,16 @@ def main():
     app.add_handler(CommandHandler("start", help_handler.start_command))
     app.add_handler(CommandHandler("help", help_handler.help_command))
 
-    # 用户管理
+    # 用户管理（mute/unmute 需要保留 bot 回复，让被操作用户看到）
     add_cmd("kick", user_management.kick_user)
     add_cmd("ban", user_management.ban_user)
     add_cmd("tempban", user_management.temp_ban)
     add_cmd("unban", user_management.unban_user)
-    add_cmd("mute", user_management.mute_user)
-    add_cmd("unmute", user_management.unmute_user)
+    add_cmd("mute", user_management.mute_user, keep_bot_reply=True)
+    add_cmd("unmute", user_management.unmute_user, keep_bot_reply=True)
 
-    # 警告系统
-    add_cmd("warn", warns.warn_user)
+    # 警告系统（/warn 需要保留 bot 回复，让被警告用户看到）
+    add_cmd("warn", warns.warn_user, keep_bot_reply=True)
     add_cmd("warns", warns.warns_list)
     add_cmd("resetwarns", warns.reset_warns)
 
@@ -123,16 +129,16 @@ def main():
     add_cmd("delperm", admin_management.del_perm)
     add_cmd("perms", admin_management.show_perms)
 
-    # 消息管理
+    # 消息管理（/announce 发布的公告需要保留）
     add_cmd("del", messages.delete_message)
     add_cmd("pin", messages.pin_message)
     add_cmd("unpin", messages.unpin_message)
     add_cmd("unpinall", messages.unpin_all)
-    add_cmd("announce", messages.announce)
+    add_cmd("announce", messages.announce, keep_bot_reply=True)
 
-    # 配置与信息
+    # 配置与信息（/rules 群规需要保留供用户查看）
     add_cmd("setrules", settings_and_info.set_rules)
-    add_cmd("rules", settings_and_info.show_rules)
+    add_cmd("rules", settings_and_info.show_rules, keep_bot_reply=True)
     add_cmd("settings", settings_and_info.settings_menu)
     add_cmd("setconfig", settings_and_info.set_config)
     add_cmd("info", settings_and_info.user_info)
@@ -148,8 +154,8 @@ def main():
     add_cmd("delword", settings_and_info.remove_word)
     add_cmd("words", settings_and_info.list_words)
 
-    # 举报
-    add_cmd("report", settings_and_info.report_user)
+    # 举报（举报者需要看到确认信息）
+    add_cmd("report", settings_and_info.report_user, keep_bot_reply=True)
     add_cmd("reports", settings_and_info.show_reports)
     add_cmd("resolve", settings_and_info.resolve_report)
 
