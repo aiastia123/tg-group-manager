@@ -1,10 +1,13 @@
 """管理员设置 & 权限管理"""
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 from utils.decorators import admin_required, require_perm, PERM_LABELS
 from services import database as db
 from services.database import ALL_PERMISSIONS
+
+logger = logging.getLogger(__name__)
 
 # TG 管理员权限映射（manage 是隐式基础权限，不暴露给用户）
 TG_PERM_MAP = {
@@ -253,6 +256,14 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
     has_topics = "topics" in valid_tg
 
     try:
+        # 记录请求的权限参数
+        logger.info(
+            "[set_tg_admin] 请求权限 chat=%s user=%s(%s) 请求: delete=%s pin=%s restrict=%s "
+            "invite=%s video=%s promote=%s info=%s topics=%s",
+            chat_id, display, target.id, has_delete, has_pin, has_restrict,
+            has_invite, has_video, has_promote, has_info, has_topics
+        )
+
         await context.bot.promote_chat_member(
             chat_id, target.id,
             is_anonymous=False,
@@ -271,15 +282,40 @@ async def _set_tg_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, args
 
         # 读取实际权限确认设置成功
         actual_perms = await _get_actual_tg_perms(update.effective_chat, target.id)
+
+        # 对比请求权限和实际权限
+        extra = actual_perms - valid_tg
+        missing = valid_tg - actual_perms
+
+        logger.info(
+            "[set_tg_admin] 权限对比 chat=%s user=%s(%s) 请求=%s 实际=%s 额外=%s 缺失=%s",
+            chat_id, display, target.id,
+            sorted(valid_tg), sorted(actual_perms),
+            sorted(extra) if extra else "无",
+            sorted(missing) if missing else "无"
+        )
+
         perm_text = ', '.join(_format_tg_perm(p) for p in sorted(actual_perms))
 
+        # 如果实际权限与请求不一致，追加提示
+        warning = ""
+        if extra or missing:
+            parts = []
+            if extra:
+                parts.append(f"额外获得：{', '.join(_format_tg_perm(p) for p in sorted(extra))}")
+            if missing:
+                parts.append(f"未能生效：{', '.join(_format_tg_perm(p) for p in sorted(missing))}")
+            warning = f"\n\n⚠️ 权限与请求不一致：\n" + "\n".join(f"  {p}" for p in parts)
+
         db.add_log(chat_id, update.effective_user.id, "set_tg_admin", target.id,
-                   f"设置 {display} 为 TG 管理员，权限：{','.join(actual_perms)}")
+                   f"设置 {display} 为 TG 管理员，请求：{','.join(sorted(valid_tg))}，实际：{','.join(sorted(actual_perms))}")
         await update.effective_message.reply_text(
             f"✅ {display} 已设为 TG 管理员\n"
             f"TG 权限：{perm_text}"
+            f"{warning}"
         )
     except Exception as e:
+        logger.error("[set_tg_admin] 失败 chat=%s user=%s(%s) 错误: %s", chat_id, display, target.id, e)
         await update.effective_message.reply_text(f"❌ 设置 TG 管理员失败：{e}")
 
 
