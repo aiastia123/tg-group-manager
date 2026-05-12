@@ -173,7 +173,7 @@ def main():
     ))
 
     # ─── 定时清理任务（每小时清理已领取/过期的临时数据） ───
-    def _cleanup_job(context):
+    async def _cleanup_job(context):
         try:
             cleanup_expired_captchas()
             cleanup_expired_mutes()
