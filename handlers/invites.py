@@ -22,8 +22,8 @@ async def create_invite(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── 管理员逻辑：保持原有行为 ──
     if is_admin:
-        expire_minutes = 0
-        member_limit = 0
+        expire_minutes = 60
+        member_limit = 1
 
         if len(context.args) >= 1:
             try:

@@ -237,6 +237,16 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
         except Exception:
             pass
 
+        # 先恢复正常权限，清除 Telegram 中的例外权限记录
+        # 避免 ban 后例外权限残留在群组设置中
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id, user_id,
+                permissions=FULL_PERMISSIONS,
+            )
+        except Exception:
+            pass
+
         # 封禁用户（Telegram 级别）
         try:
             await context.bot.ban_chat_member(chat_id, user_id)
