@@ -148,9 +148,11 @@ async def handle_captcha_answer(update: Update, context: ContextTypes.DEFAULT_TY
         db.remove_mute(captcha["chat_id"], captcha["user_id"])
 
         try:
+            # 使用群默认权限来清除例外列表中的记录
+            chat_info = await context.bot.get_chat(captcha["chat_id"])
             await context.bot.restrict_chat_member(
                 captcha["chat_id"], captcha["user_id"],
-                permissions=FULL_PERMISSIONS,
+                permissions=chat_info.permissions,
             )
         except Exception as e:
             logger.warning(f"解除禁言失败: {e}")
@@ -198,10 +200,12 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
     ])
 
     timeout = settings["captcha_timeout"]
+    mention = member.mention_html(member.first_name)
     msg = await update.effective_chat.send_message(
-        f"🔐 {member.first_name} 请在 {timeout}秒 内完成验证：\n\n"
+        f"🔐 {mention} 请在 {timeout}秒 内完成验证：\n\n"
         "👇 点击下方按钮进入私聊完成验证",
         reply_markup=keyboard,
+        parse_mode="HTML",
     )
 
     db.save_captcha_with_token(chat_id, member.id, msg.message_id, answer, token)
@@ -237,12 +241,13 @@ async def _schedule_captcha_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id,
         except Exception:
             pass
 
-        # 先恢复正常权限，清除 Telegram 中的例外权限记录
+        # 先恢复群默认权限，清除 Telegram 中的例外权限记录
         # 避免 ban 后例外权限残留在群组设置中
         try:
+            chat_info = await context.bot.get_chat(chat_id)
             await context.bot.restrict_chat_member(
                 chat_id, user_id,
-                permissions=FULL_PERMISSIONS,
+                permissions=chat_info.permissions,
             )
         except Exception:
             pass
