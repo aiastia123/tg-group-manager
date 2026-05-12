@@ -11,11 +11,32 @@ from services import database as db
 
 @require_perm("config")
 async def set_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """设置群规：/setrules <内容>"""
-    if not context.args:
-        await update.effective_message.reply_text("用法：/setrules <群规内容>")
+    """设置群规：/setrules <内容>
+    支持换行方式：
+      1. 用 | 分隔：/setrules 第一条|第二条|第三条
+      2. 用 \\n 分隔：/setrules 第一条\\n第二条\\n第三条
+      3. 回复一条已排版的消息使用 /setrules，直接保留原始换行
+    """
+    # 方式3：回复消息设置群规（保留原始换行）
+    if update.message.reply_to_message:
+        text = update.message.reply_to_message.text or update.message.reply_to_message.caption
+        if not text:
+            await update.effective_message.reply_text("❌ 回复的消息没有文本内容")
+            return
+    elif context.args:
+        text = " ".join(context.args)
+        # 支持 | 和 \n 作为换行符
+        text = text.replace("\\n", "\n").replace("|", "\n")
+    else:
+        await update.effective_message.reply_text(
+            "用法：/setrules <群规内容>\n\n"
+            "换行方式：\n"
+            "  • 用 | 分隔：/setrules 第一条|第二条|第三条\n"
+            "  • 用 \\n 分隔：/setrules 第一条\\n第二条\n"
+            "  • 回复一条已排版的消息使用 /setrules"
+        )
         return
-    text = " ".join(context.args)
+
     db.set_setting(update.effective_chat.id, "rules_text", text)
     db.add_log(update.effective_chat.id, update.effective_user.id, "set_rules", details="更新群规")
     await update.effective_message.reply_text("✅ 群规已更新")
