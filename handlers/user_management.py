@@ -228,11 +228,12 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     try:
-        # 使用群默认权限恢复，从例外列表中移除
+        # 使用群默认权限 + 短时间 until_date，让 Telegram 自动清除例外记录
         chat_info = await context.bot.get_chat(chat_id)
         await context.bot.restrict_chat_member(
             chat_id, target.id,
             permissions=chat_info.permissions,
+            until_date=int(time.time() + 60),  # 60秒后自动移除例外记录
         )
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 解除禁言失败：{e}")
