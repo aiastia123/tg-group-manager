@@ -37,7 +37,8 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings = db.get_settings(chat_id)
 
     for member in update.message.new_chat_members:
-        if member.id == context.bot.id:
+        # 跳过所有 bot（包括自己和其他 bot，bot 无法完成验证码验证）
+        if member.id == context.bot.id or getattr(member, 'is_bot', False):
             continue
 
         inviter_id = update.message.from_user.id if update.message.from_user.id != member.id else 0
@@ -51,6 +52,18 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
+            continue
+
+        # 管理员/群主豁免验证码和静默期
+        try:
+            chat_member = await update.effective_chat.get_member(member.id)
+            if chat_member.status in ("administrator", "creator"):
+                logger.info(f"管理员 {member.first_name}({member.id}) 入群，跳过验证")
+                continue
+        except Exception:
+            pass
+        if db.is_custom_admin(chat_id, member.id):
+            logger.info(f"Bot管理员 {member.first_name}({member.id}) 入群，跳过验证")
             continue
 
         if settings["captcha_enabled"]:
