@@ -15,7 +15,7 @@ on:
       # ---- gh-pages 类 ----
       clean_gh_pages:
         description: '清理 gh-pages 历史并压缩为 1 个提交'
-        required: true
+        required: false
         default: 'true'
         type: choice
         options:
@@ -23,7 +23,7 @@ on:
           - 'false'
       remove_deployments:
         description: '删除 GitHub Pages 部署环境'
-        required: true
+        required: false
         default: 'true'
         type: choice
         options:
