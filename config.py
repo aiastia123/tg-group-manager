@@ -20,4 +20,5 @@ DEFAULTS = {
     "captcha_enabled": True,  # 新用户验证
     "captcha_timeout": 120,  # 验证超时（秒）
     "forward_filter": False,  # 是否过滤转发消息
+    "auto_ban_on_leave": False,  # 用户主动退群时自动永久封禁
 }

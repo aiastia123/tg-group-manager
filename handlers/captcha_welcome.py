@@ -73,25 +73,66 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def on_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """成员离开处理"""
+    """成员离开处理：自动封禁 + 告别消息"""
     if not update.effective_chat or update.effective_chat.type == "private":
         return
 
     chat_id = update.effective_chat.id
     settings = db.get_settings(chat_id)
 
-    if not settings["goodbye_enabled"]:
-        return
-
     left_member = update.message.left_chat_member
     if left_member.id == context.bot.id:
         return
 
-    text = settings["goodbye_text"].format(
-        user=left_member.first_name,
-        chat=update.effective_chat.title or "本群",
-    )
-    await update.effective_message.reply_text(text)
+    # 跳过 bot
+    if getattr(left_member, 'is_bot', False):
+        return
+
+    # ─── 自动永久封禁退群用户（仅限主动退群，被管理员踢出不会触发） ───
+    if settings.get("auto_ban_on_leave"):
+        # 判断是否为主动退群：from_user == left_member 说明是自己退的
+        # 如果 from_user != left_member，说明是被管理员踢出/封禁的，不触发自动封禁
+        is_voluntary = update.message.from_user.id == left_member.id
+
+        if is_voluntary:
+            # 跳过管理员/群主
+            try:
+                chat_member = await update.effective_chat.get_member(left_member.id)
+                if chat_member.status in ("administrator", "creator"):
+                    logger.info(f"管理员 {left_member.first_name}({left_member.id}) 离开群组，跳过自动封禁")
+                else:
+                    # Telegram 封禁（永久）
+                    await context.bot.ban_chat_member(chat_id, left_member.id)
+                    # 加入黑名单（永久，expires_at=0）
+                    db.add_blacklist(
+                        chat_id, left_member.id,
+                        reason="主动退群，自动永久封禁",
+                        admin_id=context.bot.id,
+                        expires_at=0,
+                    )
+                    db.add_log(chat_id, context.bot.id, "auto_ban_on_leave",
+                               target_id=left_member.id,
+                               details=f"用户 {left_member.first_name}({left_member.id}) 主动退群，自动永久封禁")
+                    logger.info(f"用户 {left_member.first_name}({left_member.id}) 主动退群，已自动永久封禁")
+                    # 发送封禁通知
+                    mention = left_member.mention_html(left_member.first_name)
+                    await update.effective_message.reply_text(
+                        f"🚫 {mention} 主动离开群组，已被自动永久封禁",
+                        parse_mode="HTML",
+                    )
+                    return  # 已封禁则不再发送告别消息
+            except Exception as e:
+                logger.warning(f"自动封禁退群用户失败: {e}")
+        else:
+            logger.info(f"用户 {left_member.first_name}({left_member.id}) 被管理员踢出，跳过自动封禁")
+
+    # ─── 告别消息 ───
+    if settings["goodbye_enabled"]:
+        text = settings["goodbye_text"].format(
+            user=left_member.first_name,
+            chat=update.effective_chat.title or "本群",
+        )
+        await update.effective_message.reply_text(text)
 
 
 async def handle_captcha_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
