@@ -15,16 +15,16 @@ on:
       # ---- gh-pages 类 ----
       clean_gh_pages:
         description: '清理 gh-pages 历史并压缩为 1 个提交'
-        required: false
-        default: 'true'
+        required: true
+        default: 'false'
         type: choice
         options:
           - 'true'
           - 'false'
       remove_deployments:
         description: '删除 GitHub Pages 部署环境'
-        required: false
-        default: 'true'
+        required: true
+        default: 'false'
         type: choice
         options:
           - 'true'
@@ -58,7 +58,7 @@ on:
       clean_images:
         description: '清理 GHCR 旧镜像（含 untagged）'
         required: true
-        default: 'false'
+        default: 'true'
         type: choice
         options:
           - 'true'
