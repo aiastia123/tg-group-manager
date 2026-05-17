@@ -206,10 +206,14 @@ _FULL_HELP = """📖 群组管理 Bot 命令帮助
 /blacklists — 查看黑名单
 
 ━━━ 🔤 敏感词 ━━━
-/addword <词语> — 添加敏感词（支持 * 和 ? 通配符）
-  例：/addword bad* — 匹配 bad, badword, bad123 等
-  例：/addword te?t — 匹配 test, text 等
-  例：/addword 禁止 — 普通子串匹配
+/addword <词语> — 添加敏感词（三种模式）
+  普通模式：子串匹配
+    例：/addword 禁止
+  通配符模式：* 匹配任意字符，? 匹配单个字符
+    例：/addword bad* — 匹配 bad, badword 等
+    例：/addword te?t — 匹配 test, text 等
+  正则模式：re: 开头使用正则表达式
+    例：/addword re:\w+_[pvd]:\w{32}
 /delword <词语> — 删除敏感词
 /words — 查看敏感词列表
 

@@ -805,13 +805,26 @@ def get_sensitive_words(chat_id: int) -> list:
 
 
 def contains_sensitive_word(chat_id: int, text: str) -> str | None:
-    """检查文本是否包含敏感词，支持 * 和 ? 通配符"""
+    """检查文本是否包含敏感词
+    - 普通模式：子串匹配
+    - 通配符模式（含 * 或 ?）：fnmatch 匹配
+    - 正则模式（re: 开头，如 re:\w+_[pvd]:[A-Za-z0-9]{32}）：re.search 搜索匹配
+    """
     import fnmatch
+    import re
     words = get_sensitive_words(chat_id)
     text_lower = text.lower()
     for w in words:
         w_lower = w.lower()
-        if '*' in w_lower or '?' in w_lower:
+        # 正则模式：re:pattern
+        if w_lower.startswith('re:') and len(w_lower) > 3:
+            pattern = w[3:]  # 保留原始大小写用于正则
+            try:
+                if re.search(pattern, text, re.IGNORECASE):
+                    return w
+            except re.error:
+                pass  # 无效正则跳过
+        elif '*' in w_lower or '?' in w_lower:
             # 通配符模式：拆分文本为单词逐一匹配，也尝试整体匹配
             if fnmatch.fnmatch(text_lower, w_lower):
                 return w

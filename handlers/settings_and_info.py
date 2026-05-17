@@ -346,17 +346,25 @@ async def add_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.effective_message.reply_text(
             "用法：/addword <词语>\n\n"
-            "支持通配符：\n"
-            "  * 匹配任意多个字符\n"
-            "  ? 匹配单个字符\n\n"
-            "例：/addword bad* — 匹配 bad, badword 等\n"
-            "例：/addword te?t — 匹配 test, text 等"
+            "三种匹配模式：\n"
+            "  普通模式：子串匹配\n"
+            "    例：/addword 禁止\n"
+            "  通配符模式：* 匹配任意字符，? 匹配单个字符\n"
+            "    例：/addword bad* — 匹配 bad, badword 等\n"
+            "    例：/addword te?t — 匹配 test, text 等\n"
+            "  正则模式：re: 开头\n"
+            "    例：/addword re:\\w+_[pvd]:\\w{32}"
         )
         return
 
     word = context.args[0]
     db.add_sensitive_word(update.effective_chat.id, word, update.effective_user.id)
-    mode = "通配符匹配" if ('*' in word or '?' in word) else "子串匹配"
+    if word.lower().startswith('re:'):
+        mode = "正则匹配"
+    elif '*' in word or '?' in word:
+        mode = "通配符匹配"
+    else:
+        mode = "子串匹配"
     await update.effective_message.reply_text(f"✅ 已添加敏感词：{word}（{mode}）")
 
 
