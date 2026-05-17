@@ -34,12 +34,40 @@ async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if found_word:
         try:
             await update.effective_message.delete()
-            await update.effective_chat.send_message(
-                f"⚠️ {update.effective_user.first_name} 消息包含敏感词已删除"
-            )
         except Exception:
             pass
-        db.add_log(chat_id, 0, "filter_word", user_id, f"敏感词过滤：{found_word}")
+
+        # 自动添加警告（与 /warn 一致）
+        warn_limit = db.get_settings(chat_id)["warn_limit"]
+        reason = f"触发敏感词：{found_word}"
+        count = db.add_warn(chat_id, user_id, reason, 0)  # admin_id=0 表示系统自动
+        display = update.effective_user.username or update.effective_user.first_name
+
+        db.add_log(chat_id, 0, "filter_word", user_id,
+                   f"敏感词过滤：{found_word}，自动警告 ({count}/{warn_limit})")
+
+        if count >= warn_limit:
+            # 警告满自动踢出
+            try:
+                await context.bot.ban_chat_member(chat_id, user_id)
+                await context.bot.unban_chat_member(chat_id, user_id)
+                db.clear_warns(chat_id, user_id)
+                db.add_log(chat_id, 0, "auto_kick", user_id,
+                           f"敏感词警告满 {warn_limit} 次自动踢出 {display}")
+                await update.effective_chat.send_message(
+                    f"⚠️ {display} 触发敏感词「{found_word}」\n"
+                    f"已达 {warn_limit} 次警告上限，已自动踢出"
+                )
+            except Exception:
+                await update.effective_chat.send_message(
+                    f"⚠️ {display} 触发敏感词「{found_word}」({count}/{warn_limit})\n"
+                    f"❌ 自动踢出失败"
+                )
+        else:
+            await update.effective_chat.send_message(
+                f"⚠️ {display} 触发敏感词「{found_word}」\n"
+                f"收到警告 ({count}/{warn_limit})"
+            )
         return
 
     # ── 链接过滤 ──
