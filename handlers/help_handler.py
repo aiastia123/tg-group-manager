@@ -113,7 +113,7 @@ _FULL_HELP = """📖 群组管理 Bot 命令帮助
 /unmute <用户ID或回复> — 解除禁言
 
 ━━━ ⚠️ 警告系统 ━━━
-/warn <用户ID或回复> [原因] — 警告用户
+/warn <用户ID或回复> [原因] — 警告用户（回复消息时会自动删除该消息）
 /warns <用户ID或回复> — 查看警告记录
 /resetwarns <用户ID或回复> — 清除警告
 
@@ -206,7 +206,10 @@ _FULL_HELP = """📖 群组管理 Bot 命令帮助
 /blacklists — 查看黑名单
 
 ━━━ 🔤 敏感词 ━━━
-/addword <词语> — 添加敏感词
+/addword <词语> — 添加敏感词（支持 * 和 ? 通配符）
+  例：/addword bad* — 匹配 bad, badword, bad123 等
+  例：/addword te?t — 匹配 test, text 等
+  例：/addword 禁止 — 普通子串匹配
 /delword <词语> — 删除敏感词
 /words — 查看敏感词列表
 

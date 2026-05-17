@@ -17,6 +17,13 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     warn_limit = db.get_settings(chat_id)["warn_limit"]
 
+    # 删除被回复的消息（即被警告用户的消息）
+    if update.message.reply_to_message:
+        try:
+            await update.message.reply_to_message.delete()
+        except Exception:
+            pass
+
     count = db.add_warn(chat_id, target.id, reason, update.effective_user.id)
     display = target.username or target.first_name
 
