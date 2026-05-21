@@ -213,7 +213,7 @@ _FULL_HELP = """📖 群组管理 Bot 命令帮助
     例：/addword bad* — 匹配 bad, badword 等
     例：/addword te?t — 匹配 test, text 等
   正则模式：re: 开头使用正则表达式
-    例：/addword re:\w+_[pvd]:\w{32}
+    例：/addword re:\\w+_[pvd]:\\w{32}
 /delword <词语> — 删除敏感词
 /words — 查看敏感词列表
 

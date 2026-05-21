@@ -832,7 +832,7 @@ def contains_sensitive_word(chat_id: int, text: str) -> str | None:
     """检查文本是否包含敏感词
     - 普通模式：子串匹配
     - 通配符模式（含 * 或 ?）：fnmatch 匹配
-    - 正则模式（re: 开头，如 re:\w+_[pvd]:[A-Za-z0-9]{32}）：re.search 搜索匹配
+    - 正则模式（re: 开头，如 re:\\w+_[pvd]:[A-Za-z0-9]{32}）：re.search 搜索匹配
     """
     import fnmatch
     import re
