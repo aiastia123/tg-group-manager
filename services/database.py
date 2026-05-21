@@ -346,12 +346,36 @@ def is_blacklisted(chat_id: int, user_id: int) -> bool:
 
 
 def get_blacklist(chat_id: int) -> list:
+    """获取黑名单列表（自动过滤已过期的记录）"""
+    now = time.time()
     with get_db() as conn:
+        # 先清理已过期的记录
+        conn.execute(
+            "DELETE FROM blacklist WHERE chat_id=? AND expires_at > 0 AND expires_at <= ?",
+            (chat_id, now),
+        )
         rows = conn.execute(
             "SELECT * FROM blacklist WHERE chat_id=? ORDER BY created_at DESC",
             (chat_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def cleanup_expired_blacklist():
+    """清理所有群组中已过期的黑名单记录，返回过期的 (chat_id, user_id) 列表"""
+    now = time.time()
+    with get_db() as conn:
+        # 先查询即将清理的记录，供调用方同步 Telegram 封禁
+        rows = conn.execute(
+            "SELECT chat_id, user_id FROM blacklist WHERE expires_at > 0 AND expires_at <= ?",
+            (now,),
+        ).fetchall()
+        if rows:
+            conn.execute(
+                "DELETE FROM blacklist WHERE expires_at > 0 AND expires_at <= ?",
+                (now,),
+            )
+        return [(r["chat_id"], r["user_id"]) for r in rows]
 
 
 # ─── 邀请链接 ───

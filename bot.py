@@ -10,7 +10,7 @@ from telegram.ext import (
     filters,
 )
 from config import BOT_TOKEN
-from services.database import init_db, cleanup_expired_captchas, cleanup_expired_mutes, cleanup_pending_messages
+from services.database import init_db, cleanup_expired_captchas, cleanup_expired_mutes, cleanup_pending_messages, cleanup_expired_blacklist
 from handlers import (
     user_management,
     warns,
@@ -184,6 +184,15 @@ def main():
             cleanup_expired_captchas()
             cleanup_expired_mutes()
             cleanup_pending_messages()
+            # 清理过期黑名单，并同步解除 Telegram 侧封禁
+            expired = cleanup_expired_blacklist()
+            if expired:
+                for chat_id, user_id in expired:
+                    try:
+                        await context.bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
+                    except Exception as e:
+                        logger.warning(f"自动解封 {user_id} in {chat_id} 失败: {e}")
+                logger.info(f"清理了 {len(expired)} 条过期黑名单记录并同步 Telegram 解封")
             logger.info("定时清理完成")
         except Exception as e:
             logger.error(f"定时清理失败：{e}")
