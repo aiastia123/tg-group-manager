@@ -1,9 +1,13 @@
 """消息过滤器：敏感词、链接、媒体、转发、洪水检测"""
+import logging
 import re
-from telegram import Update, MessageEntity
+import time
+from telegram import Update, MessageEntity, ChatPermissions
 from telegram.ext import ContextTypes
 from utils.decorators import is_user_admin
 from services import database as db
+
+logger = logging.getLogger(__name__)
 
 
 async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,22 +137,30 @@ async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if db.check_flood(chat_id, user_id, flood_msgs, flood_secs):
             # 洪水触发 → 禁言
             mute_minutes = 5
-            import time
             until = time.time() + mute_minutes * 60
             try:
                 await context.bot.restrict_chat_member(
                     chat_id, user_id,
-                    can_send_messages=False,
-                    can_send_media_messages=False,
-                    can_send_other_messages=False,
+                    permissions=ChatPermissions(
+                        can_send_messages=False,
+                        can_send_audios=False,
+                        can_send_documents=False,
+                        can_send_photos=False,
+                        can_send_videos=False,
+                        can_send_video_notes=False,
+                        can_send_voice_notes=False,
+                        can_send_polls=False,
+                        can_send_other_messages=False,
+                        can_add_web_page_previews=False,
+                    ),
                     until_date=int(until),
                 )
                 db.add_mute(chat_id, user_id, until)
                 await update.effective_chat.send_message(
                     f"🔇 {update.effective_user.first_name} 因刷屏被禁言 {mute_minutes} 分钟"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"洪水禁言失败 chat_id={chat_id} user={user_id}: {e}")
             db.reset_flood(chat_id, user_id)
             db.add_log(chat_id, 0, "flood_mute", user_id,
                        f"洪水检测触发，禁言 {mute_minutes} 分钟")

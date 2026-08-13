@@ -64,12 +64,13 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "flood_seconds": "洪水时间窗(秒)",
         "link_filter": "链接过滤",
         "media_filter": "媒体过滤",
+        "forward_filter": "转发过滤",
         "welcome_enabled": "欢迎消息",
         "goodbye_enabled": "告别消息",
         "captcha_enabled": "入群验证",
         "captcha_timeout": "验证超时(秒)",
+        "auto_ban_on_leave": "退群自动封禁",
         "auto_delete_seconds": "自动删除(秒)",
-        "forward_filter": "转发过滤",
     }
     for key, label in labels.items():
         val = settings.get(key, "")

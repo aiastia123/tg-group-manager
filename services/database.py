@@ -194,6 +194,14 @@ def init_db():
         except Exception:
             pass  # 列已存在，忽略
 
+        # 性能索引（IF NOT EXISTS 保证可重复执行）
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_warns_chat_user ON warns(chat_id, user_id);
+            CREATE INDEX IF NOT EXISTS idx_admin_log_chat_time ON admin_log(chat_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_reports_chat_status ON reports(chat_id, status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_captcha_token ON captcha(token);
+        """)
+
 
 # ─── 配置管理 ───
 
@@ -218,13 +226,16 @@ def get_settings(chat_id: int) -> dict:
     for row in rows:
         key = row["key"]
         val = row["value"]
-        # 类型转换
+        # 类型转换（转换失败时回退到默认值，避免脏数据导致所有 handler 崩溃）
         if key in DEFAULTS:
             default_val = DEFAULTS[key]
-            if isinstance(default_val, bool):
-                val = val.lower() in ("true", "1", "yes")
-            elif isinstance(default_val, int):
-                val = int(val)
+            try:
+                if isinstance(default_val, bool):
+                    val = val.lower() in ("true", "1", "yes")
+                elif isinstance(default_val, int):
+                    val = int(val)
+            except (ValueError, AttributeError):
+                val = default_val
         settings[key] = val
     return settings
 
@@ -290,12 +301,28 @@ def get_logs(chat_id: int, limit: int = 20) -> list:
 
 # ─── 用户备注 ───
 
-def set_user_note(chat_id: int, user_id: int, note: str = "", tags: str = ""):
+def set_user_note(chat_id: int, user_id: int, note: str = None, tags: str = None):
+    """设置用户备注/标签。只更新传入的字段，None 表示不修改该字段。
+
+    注意：note="" 和 tags="" 是有效值（清空），只有 None 才跳过。
+    需要清空字段时，调用方传空字符串。
+    """
     with get_db() as conn:
+        # 确保记录存在
         conn.execute(
-            "INSERT OR REPLACE INTO user_notes (chat_id, user_id, note, tags) VALUES (?, ?, ?, ?)",
-            (chat_id, user_id, note, tags),
+            "INSERT OR IGNORE INTO user_notes (chat_id, user_id, note, tags) VALUES (?, ?, '', '')",
+            (chat_id, user_id),
         )
+        # 只更新非 None 的字段
+        if note is not None and tags is not None:
+            conn.execute("UPDATE user_notes SET note=?, tags=? WHERE chat_id=? AND user_id=?",
+                         (note, tags, chat_id, user_id))
+        elif note is not None:
+            conn.execute("UPDATE user_notes SET note=? WHERE chat_id=? AND user_id=?",
+                         (note, chat_id, user_id))
+        elif tags is not None:
+            conn.execute("UPDATE user_notes SET tags=? WHERE chat_id=? AND user_id=?",
+                         (tags, chat_id, user_id))
 
 
 def get_user_note(chat_id: int, user_id: int) -> dict | None:

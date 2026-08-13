@@ -209,6 +209,7 @@ _FULL_HELP = """📖 群组管理 Bot 命令帮助
   goodbye_text <文本> — 告别消息模板
   captcha_enabled <true/false> — 入群验证（默认true）
   captcha_timeout <数字> — 验证超时秒数（默认120）
+  auto_ban_on_leave <true/false> — 主动退群自动永久封禁（默认false）
   auto_delete_seconds <数字> — 自动删除消息秒数（默认0关闭）
   例：/setconfig link_filter true
   例：/setconfig warn_limit 5
