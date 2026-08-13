@@ -5,3 +5,4 @@ data/
 venv/
 handlers/captcha_welcome
 test.py
+test_chat_member.py
