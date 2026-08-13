@@ -31,18 +31,18 @@ async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.add_log(chat_id, update.effective_user.id, "warn", target.id, detail)
 
     if count >= warn_limit:
-        # 自动踢出
+        # 警告满上限：永久封禁 + 写入黑名单，重新入群仍会被拦截
         try:
             await context.bot.ban_chat_member(chat_id, target.id)
-            await context.bot.unban_chat_member(chat_id, target.id)
+            db.add_blacklist(chat_id, target.id, f"警告满 {warn_limit} 次", update.effective_user.id)
             db.clear_warns(chat_id, target.id)
-            db.add_log(chat_id, update.effective_user.id, "auto_kick", target.id,
-                       f"警告满 {warn_limit} 次自动踢出 {display}")
+            db.add_log(chat_id, update.effective_user.id, "auto_ban", target.id,
+                       f"警告满 {warn_limit} 次自动永久封禁 {display}")
             await update.effective_message.reply_text(
-                f"⚠️ {display} 已达 {warn_limit} 次警告上限，已自动踢出"
+                f"⚠️ {display} 已达 {warn_limit} 次警告上限，已永久封禁并加入黑名单"
             )
         except Exception as e:
-            await update.effective_message.reply_text(f"❌ 自动踢出失败：{e}")
+            await update.effective_message.reply_text(f"❌ 自动封禁失败：{e}")
     else:
         msg = f"⚠️ {display} 收到警告 ({count}/{warn_limit})"
         if reason:

@@ -66,11 +66,14 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 封禁失败：{e}")
         return
 
+    # 同步写入黑名单（永久），解封后重入仍会被自动拦截
+    db.add_blacklist(chat_id, target.id, reason or "封禁", update.effective_user.id)
+
     display = target.username or target.first_name
     detail = f"封禁 {display}" + (f"，原因：{reason}" if reason else "")
     db.add_log(chat_id, update.effective_user.id, "ban", target.id, detail)
 
-    msg = f"✅ 已封禁 {display}"
+    msg = f"✅ 已封禁 {display}（已加入黑名单，重新入群将自动拦截）"
     if reason:
         msg += f"\n原因：{reason}"
     await update.effective_message.reply_text(msg)
@@ -121,12 +124,15 @@ async def temp_ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 临时封禁失败：{e}")
         return
 
+    # 同步写入黑名单（定时，与封禁同时过期），期间重新入群会被自动拦截
+    db.add_blacklist(chat_id, target.id, reason or "临时封禁", update.effective_user.id, expires_at=until)
+
     display = target.username or target.first_name
     detail = f"临时封禁 {display} {minutes}分钟" + (f"，原因：{reason}" if reason else "")
     db.add_log(chat_id, update.effective_user.id, "temp_ban", target.id, detail)
 
     await update.effective_message.reply_text(
-        f"✅ 已临时封禁 {display}，{minutes}分钟后自动解封"
+        f"✅ 已临时封禁 {display}，{minutes}分钟后自动解封（期间重入将被拦截）"
     )
 
 
@@ -148,9 +154,12 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(f"❌ 解封失败：{e}")
         return
 
+    # 同步移除黑名单，否则重入时仍会被自动拦截
+    db.remove_blacklist(chat_id, target.id)
+
     display = target.username or target.first_name
     db.add_log(chat_id, update.effective_user.id, "unban", target.id, f"解封 {display}")
-    await update.effective_message.reply_text(f"✅ 已解封 {display}")
+    await update.effective_message.reply_text(f"✅ 已解封 {display}（已移出黑名单）")
 
 
 @require_perm("mute")
