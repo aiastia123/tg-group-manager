@@ -91,12 +91,6 @@ def main():
         logger.error(f"处理 update 时发生未捕获异常: {context.error}", exc_info=context.error)
     app.add_error_handler(_error_handler)
 
-    # ─── 临时诊断：记录收到的群事件类型（排查入群事件是否到达 Bot） ───
-    async def _log_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.message and update.message.new_chat_members:
-            logger.info(f"[诊断] 收到 new_chat_members 事件，来自 chat={update.effective_chat.id}")
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, _log_update), group=-1)
-
     # ─── 辅助函数：注册带自动删除的命令 ───
     def add_cmd(name, handler, keep_bot_reply=False):
         """注册命令，自动包装 auto_delete_in_group 装饰器
