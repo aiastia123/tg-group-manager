@@ -46,6 +46,25 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 
+async def chatinfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """诊断命令：显示当前群组的类型、ID、权限等信息"""
+    chat = update.effective_chat
+    if not chat:
+        return
+
+    info = (
+        f"📋 群组信息\n"
+        f"━━━━━━━━━━━━━\n"
+        f"chat_id: {chat.id}\n"
+        f"类型: {chat.type}\n"
+        f"{'（✅ 已是 supergroup）' if chat.type == 'supergroup' else '（ℹ️ 普通群）'}\n"
+        f"成员数: {getattr(chat, 'member_count', '未知')}\n"
+    )
+    if chat.type == "private":
+        info += "\n⚠️ 这是一条私聊消息"
+    await update.effective_message.reply_text(info)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """启动命令：/start [深链参数]"""
     # 处理深链参数 — 验证码

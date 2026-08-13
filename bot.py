@@ -112,6 +112,8 @@ def main():
     # 帮助与启动（不需要自动删除）
     app.add_handler(CommandHandler("start", help_handler.start_command))
     app.add_handler(CommandHandler("help", help_handler.help_command))
+    # 诊断命令：查看群组类型与 ID
+    app.add_handler(CommandHandler("chatinfo", help_handler.chatinfo_command))
 
     # 用户管理（mute/unmute 需要保留 bot 回复，让被操作用户看到）
     add_cmd("kick", user_management.kick_user)
