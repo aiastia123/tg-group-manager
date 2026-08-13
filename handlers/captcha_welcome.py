@@ -34,11 +34,15 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chat_id = update.effective_chat.id
+    logger.info(f"收到入群事件 chat_id={chat_id} chat_type={update.effective_chat.type}")
     settings = db.get_settings(chat_id)
+    logger.info(f"当前配置: captcha_enabled={settings.get('captcha_enabled')} "
+                f"new_user_mute_minutes={settings.get('new_user_mute_minutes')}")
 
     for member in update.message.new_chat_members:
         # 跳过所有 bot（包括自己和其他 bot，bot 无法完成验证码验证）
         if member.id == context.bot.id or getattr(member, 'is_bot', False):
+            logger.info(f"跳过 bot: {member.first_name}({member.id})")
             continue
 
         inviter_id = update.message.from_user.id if update.message.from_user.id != member.id else 0
@@ -256,13 +260,18 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
 
     timeout = settings["captcha_timeout"]
     mention = member.mention_html(member.first_name)
-    msg = await update.effective_chat.send_message(
-        f"🔐 {mention} 请在 {timeout}秒 内完成验证：\n\n"
-        "👇 点击下方按钮进入私聊完成验证",
-        reply_markup=keyboard,
-        parse_mode="HTML",
-    )
+    try:
+        msg = await update.effective_chat.send_message(
+            f"🔐 {mention} 请在 {timeout}秒 内完成验证：\n\n"
+            "👇 点击下方按钮进入私聊完成验证",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"发送验证消息失败 chat_id={chat_id} user={member.id}: {e}")
+        return
 
+    logger.info(f"已发送验证消息 chat_id={chat_id} user={member.id}({member.first_name}) token={token}")
     db.save_captcha_with_token(chat_id, member.id, msg.message_id, answer, token)
 
     until = time.time() + timeout
@@ -273,8 +282,8 @@ async def _send_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE, memb
             until_date=int(until),
         )
         db.add_mute(chat_id, member.id, until)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"禁言新用户失败 chat_id={chat_id} user={member.id}: {e}")
 
     asyncio.create_task(
         _schedule_captcha_timeout(context, chat_id, member.id, msg.message_id, timeout)
