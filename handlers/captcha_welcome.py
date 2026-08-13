@@ -3,12 +3,31 @@ import asyncio
 import logging
 import secrets
 import time
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, ChatMemberUpdated
 from telegram.ext import ContextTypes
 from services import database as db
 from utils.captcha import generate_image_captcha
 
 logger = logging.getLogger(__name__)
+
+# 防重复处理：记录最近处理的 (chat_id, user_id) → 时间戳
+# ChatMemberUpdated 和 new_chat_members 可能同时触发，需要去重
+_recently_processed: dict[tuple, float] = {}
+_DEDUP_WINDOW = 30  # 30 秒内同用户同群只处理一次
+
+
+def _mark_processed(chat_id: int, user_id: int) -> bool:
+    """标记 (chat_id, user_id) 已处理。返回 True 表示首次处理，False 表示重复（应跳过）"""
+    key = (chat_id, user_id)
+    now = time.time()
+    # 顺带清理过期记录
+    expired = [k for k, t in _recently_processed.items() if now - t > _DEDUP_WINDOW]
+    for k in expired:
+        del _recently_processed[k]
+    if key in _recently_processed and now - _recently_processed[key] < _DEDUP_WINDOW:
+        return False
+    _recently_processed[key] = now
+    return True
 
 # 禁言权限：全部 False，不给管理权限，用户只能查看群
 MUTE_PERMISSIONS = ChatPermissions()
@@ -45,6 +64,11 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"跳过 bot: {member.first_name}({member.id})")
             continue
 
+        # 去重：ChatMemberUpdated 可能也处理了同一个入群事件
+        if not _mark_processed(chat_id, member.id):
+            logger.info(f"跳过重复入群事件: {member.first_name}({member.id})")
+            continue
+
         inviter_id = update.message.from_user.id if update.message.from_user.id != member.id else 0
         db.track_invite(chat_id, member.id, inviter_id)
 
@@ -74,6 +98,165 @@ async def on_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _send_captcha(update, context, member, settings)
         elif settings["new_user_mute_minutes"] > 0:
             await _mute_new_user(update, context, member, settings)
+
+
+async def on_chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """通过 ChatMemberUpdated 事件检测入群/退群
+
+    这是 new_chat_members service message 的替代方案。
+    当群开启"隐藏成员"时，service message 会被屏蔽，
+    但 ChatMemberUpdated（管理员级别事件）仍可收到。
+
+    Bot 必须是群管理员，且 run_polling 的 allowed_updates 需包含 "chat_member"。
+    """
+    if not update.chat_member:
+        return
+
+    cmu: ChatMemberUpdated = update.chat_member
+    chat = cmu.chat
+    if chat.type == "private":
+        return
+
+    chat_id = chat.id
+    user = cmu.new_chat_member.user
+
+    # 跳过 bot
+    if user.id == context.bot.id or getattr(user, 'is_bot', False):
+        return
+
+    # 解析状态变化：(was_member, is_member)
+    result = _extract_status_change(cmu)
+    if result is None:
+        return
+    was_member, is_member = result
+
+    logger.info(f"[ChatMemberUpdated] chat_id={chat_id} user={user.first_name}({user.id}) "
+                f"was_member={was_member} is_member={is_member} "
+                f"old={cmu.old_chat_member.status} new={cmu.new_chat_member.status}")
+
+    if not was_member and is_member:
+        # ─── 入群 ───
+        await _handle_member_joined(update, context, chat_id, user, cmu)
+    elif was_member and not is_member:
+        # ─── 退群 ───
+        await _handle_member_left(update, context, chat_id, user, cmu)
+
+
+def _extract_status_change(cmu: ChatMemberUpdated) -> tuple[bool, bool] | None:
+    """从 ChatMemberUpdated 提取成员状态变化 (was_member, is_member)"""
+    from telegram import ChatMember
+    difference = cmu.difference()
+    status_change = difference.get("status")
+    if status_change is None:
+        return None
+
+    old_status, new_status = status_change
+    old_is_member, new_is_member = difference.get("is_member", (None, None))
+
+    member_statuses = [ChatMember.MEMBER, ChatMember.OWNER, ChatMember.ADMINISTRATOR]
+    was_member = (
+        old_status in member_statuses
+        or (old_status == ChatMember.RESTRICTED and old_is_member is True)
+    )
+    is_member = (
+        new_status in member_statuses
+        or (new_status == ChatMember.RESTRICTED and new_is_member is True)
+    )
+    return was_member, is_member
+
+
+async def _handle_member_joined(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                 chat_id: int, user, cmu: ChatMemberUpdated):
+    """处理入群（ChatMemberUpdated 通道）"""
+    # 去重：new_chat_members service message 可能也处理了
+    if not _mark_processed(chat_id, user.id):
+        logger.info(f"跳过重复入群事件（已由 service message 处理）: {user.first_name}({user.id})")
+        return
+
+    settings = db.get_settings(chat_id)
+    logger.info(f"收到入群事件 [ChatMemberUpdated] chat_id={chat_id} user={user.first_name}({user.id})")
+
+    # 追踪邀请来源：from_user 是执行邀请的人，如果是自己加入则为 user 自己
+    inviter_id = cmu.from_user.id if cmu.from_user.id != user.id else 0
+    db.track_invite(chat_id, user.id, inviter_id)
+
+    # 黑名单检查
+    if db.is_blacklisted(chat_id, user.id):
+        try:
+            await context.bot.ban_chat_member(chat_id, user.id)
+            await context.bot.send_message(
+                chat_id, f"🚫 {user.first_name} 在黑名单中，已自动封禁"
+            )
+        except Exception as e:
+            logger.warning(f"黑名单封禁失败: {e}")
+        return
+
+    # 管理员/群主豁免
+    if cmu.new_chat_member.status in ("administrator", "creator"):
+        logger.info(f"管理员 {user.first_name}({user.id}) 入群，跳过验证")
+        return
+    if db.is_custom_admin(chat_id, user.id):
+        logger.info(f"Bot管理员 {user.first_name}({user.id}) 入群，跳过验证")
+        return
+
+    if settings["captcha_enabled"]:
+        await _send_captcha(update, context, user, settings)
+    elif settings["new_user_mute_minutes"] > 0:
+        await _mute_new_user(update, context, user, settings)
+
+
+async def _handle_member_left(update: Update, context: ContextTypes.DEFAULT_TYPE,
+                               chat_id: int, user, cmu: ChatMemberUpdated):
+    """处理退群（ChatMemberUpdated 通道）"""
+    # 去重：left_chat_member service message 可能也处理了
+    if not _mark_processed(chat_id, user.id):
+        return
+
+    settings = db.get_settings(chat_id)
+
+    # 自动永久封禁主动退群用户
+    if settings.get("auto_ban_on_leave"):
+        is_voluntary = cmu.from_user.id == user.id
+        if is_voluntary:
+            # 跳过管理员/群主
+            if cmu.old_chat_member.status in ("administrator", "creator"):
+                logger.info(f"管理员 {user.first_name}({user.id}) 离开群组，跳过自动封禁")
+                return
+            try:
+                await context.bot.ban_chat_member(chat_id, user.id)
+                db.add_blacklist(
+                    chat_id, user.id,
+                    reason="主动退群，自动永久封禁",
+                    admin_id=context.bot.id,
+                    expires_at=0,
+                )
+                db.add_log(chat_id, context.bot.id, "auto_ban_on_leave",
+                           target_id=user.id,
+                           details=f"用户 {user.first_name}({user.id}) 主动退群，自动永久封禁")
+                logger.info(f"用户 {user.first_name}({user.id}) 主动退群，已自动永久封禁")
+                mention = user.mention_html(user.first_name)
+                await context.bot.send_message(
+                    chat_id, f"🚫 {mention} 主动离开群组，已被自动永久封禁",
+                    parse_mode="HTML",
+                )
+                return
+            except Exception as e:
+                logger.warning(f"自动封禁退群用户失败: {e}")
+        else:
+            logger.info(f"用户 {user.first_name}({user.id}) 被管理员踢出，跳过自动封禁")
+
+    # 告别消息
+    if settings["goodbye_enabled"]:
+        try:
+            chat_info = await context.bot.get_chat(chat_id)
+            chat_title = chat_info.title or "本群"
+        except Exception:
+            chat_title = "本群"
+        text = settings["goodbye_text"].format(user=user.first_name, chat=chat_title)
+        try:
+            await context.bot.send_message(chat_id, text)
+        except Exception as e:
+            logger.warning(f"发送告别消息失败: {e}")
 
 
 async def on_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -364,8 +547,11 @@ async def _mute_new_user(update: Update, context: ContextTypes.DEFAULT_TYPE, mem
             until_date=int(until),
         )
         db.add_mute(chat_id, member.id, until)
-        await update.effective_message.reply_text(
+        # 用 chat.send_message 而非 effective_message.reply_text，
+        # 因为 ChatMemberUpdated 事件中没有 message
+        await context.bot.send_message(
+            chat_id,
             f"🔇 {member.first_name} 新用户静默期 {minutes} 分钟"
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"新用户静默失败 chat_id={chat_id} user={member.id}: {e}")

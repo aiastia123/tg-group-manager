@@ -1,12 +1,13 @@
 """Telegram 群组管理 Bot — 主入口"""
 import logging
 import os
-from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
+from telegram import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats, Update
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ChatMemberHandler,
     filters,
 )
 from config import BOT_TOKEN
@@ -172,9 +173,13 @@ def main():
     add_cmd("reports", settings_and_info.show_reports)
     add_cmd("resolve", settings_and_info.resolve_report)
 
-    # 入群/退群
+    # 入群/退群（service message 通道 — 未开启"隐藏成员"时有效）
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, captcha_welcome.on_new_member))
     app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, captcha_welcome.on_left_member))
+
+    # 入群/退群（ChatMemberUpdated 通道 — 开启"隐藏成员"时也能收到，需 Bot 为管理员）
+    # 两个通道通过 _mark_processed 去重，不会重复处理
+    app.add_handler(ChatMemberHandler(captcha_welcome.on_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
 
     # 验证码按钮回调
     app.add_handler(CallbackQueryHandler(captcha_welcome.handle_captcha_button, pattern=r"^captcha_"))
@@ -215,7 +220,9 @@ def main():
 
     # ─── 启动 ───
     logger.info("Bot 启动中...")
-    app.run_polling(drop_pending_updates=True)
+    # allowed_updates 必须包含 "chat_member"，否则 ChatMemberHandler 收不到事件
+    # （Bot 默认不接收 chat_member 类型的 update）
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
